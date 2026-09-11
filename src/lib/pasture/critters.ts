@@ -17,8 +17,11 @@ export type Critter = {
   eyes: string
   /** Relative size; a cow is 1. */
   size: number
-  ears: "floppy" | "up" | "point"
+  /** floppy: hangs from the side. up: semi-erect with folded tips. point: a cat's. long: a spaniel's curls. */
+  ears: "floppy" | "up" | "point" | "long"
   legs: "short" | "regular"
+  /** A cocker spaniel is mostly fur. */
+  fluffy?: boolean
   /** Cruising speed in field units per second. */
   speed: number
   /** Whose heels this one stays on. */
@@ -44,11 +47,10 @@ export const CRITTERS: Critter[] = [
     id: "moon",
     name: "Moon",
     kind: "dog",
-    blurb: "Kobi's queen. Does NOT want to go on a walk.",
-    body: "#efe9dc",
-    patch: "#f8f5ee",
-    eyes: "#2b1d14",
-    size: 0.84,
+    blurb: "Kobi's queen. Blue coat, blue eyes, does NOT want to go on a walk.",
+    body: "#5b5652",
+    eyes: "#a9bcc8",
+    size: 0.9,
     ears: "floppy",
     legs: "regular",
     speed: 3.4,
@@ -58,28 +60,29 @@ export const CRITTERS: Critter[] = [
     id: "bean",
     name: "Bean",
     kind: "dog",
-    blurb: "Kobi's other one. Famous for the bean lean.",
-    body: "#c0763d",
-    patch: "#e8c79a",
-    eyes: "#2b1d14",
-    size: 0.68,
-    ears: "floppy",
-    legs: "short",
-    speed: 2.6,
+    blurb: "Kobi's other one. Sits like a person. Famous for the bean lean.",
+    body: "#e6d7bd",
+    patch: "#f7f2ea",
+    eyes: "#4a2e1c",
+    size: 0.76,
+    ears: "up",
+    legs: "regular",
+    speed: 3,
     follows: FARMER_ID,
   },
   {
     id: "waffles",
     name: "Waffles",
     kind: "dog",
-    blurb: "Mallory's prince. Every photo a renaissance painting.",
-    body: "#d9a45f",
-    patch: "#f7f1e6",
+    blurb: "Mallory's prince. Cocker spaniel, 21 pounds, every photo a renaissance painting.",
+    body: "#e2cba0",
+    patch: "#efe0c2",
     eyes: "#2b1d14",
-    size: 0.68,
-    ears: "floppy",
+    size: 0.52,
+    ears: "long",
     legs: "regular",
-    speed: 3.8,
+    speed: 3.6,
+    fluffy: true,
   },
   {
     id: "felix",

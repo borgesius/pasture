@@ -51,7 +51,15 @@ function buildDog(spec: Critter): Parts {
   const body = shadowed(new THREE.Mesh(new THREE.CapsuleGeometry(0.42, spec.legs === "short" ? 1.25 : 1.05, 6, 14), coat))
   body.rotation.x = Math.PI / 2
   body.position.y = bodyY
+  if (spec.fluffy) body.scale.set(1.2, 1.2, 1)
   rig.add(body)
+  if (spec.fluffy) {
+    // A spaniel's skirt of fur hangs below the body line.
+    const skirt = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10), coat)
+    skirt.scale.set(1.05, 0.7, 1.15)
+    skirt.position.set(0, bodyY - 0.28, -0.05)
+    rig.add(skirt)
+  }
   if (spec.patch) {
     const chest = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), patch)
     chest.scale.set(1, 0.85, 0.6)
@@ -63,7 +71,14 @@ function buildDog(spec: Critter): Parts {
   head.position.set(0, bodyY + 0.36, 0.82)
   rig.add(head)
   const skull = shadowed(new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), coat))
+  if (spec.fluffy) skull.scale.set(1.15, 1.15, 1.05)
   head.add(skull)
+  if (spec.fluffy) {
+    const topknot = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), coat)
+    topknot.scale.set(1.1, 0.7, 1)
+    topknot.position.set(0, 0.32, -0.02)
+    head.add(topknot)
+  }
   const snout = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.36), spec.patch ? patch : coat)
   snout.position.set(0, -0.1, 0.38)
   head.add(snout)
@@ -75,14 +90,21 @@ function buildDog(spec: Critter): Parts {
     eye.position.set(side * 0.16, 0.1, 0.3)
     head.add(eye)
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), coat)
-    if (spec.ears === "floppy") {
+    if (spec.ears === "long") {
+      // Spaniel ears: long curls that hang past the jaw.
+      ear.scale.set(0.75, 1.7, 0.55)
+      ear.position.set(side * 0.4, -0.12, -0.04)
+      ear.rotation.z = side * 0.18
+    } else if (spec.ears === "floppy") {
       ear.scale.set(0.55, 1, 0.35)
       ear.position.set(side * 0.36, -0.02, -0.02)
       ear.rotation.z = side * 0.35
     } else {
-      ear.scale.set(0.45, 0.9, 0.35)
-      ear.position.set(side * 0.24, 0.42, -0.06)
-      ear.rotation.z = side * -0.3
+      // Semi-erect, tips folded forward.
+      ear.scale.set(0.5, 0.95, 0.35)
+      ear.position.set(side * 0.26, 0.4, -0.06)
+      ear.rotation.z = side * -0.45
+      ear.rotation.x = -0.35
     }
     head.add(ear)
   }
@@ -108,8 +130,9 @@ function buildDog(spec: Critter): Parts {
 
   const tail = new THREE.Group()
   tail.position.set(0, bodyY + 0.22, -0.62)
-  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.6, 6), coat)
-  tailMesh.position.set(0, 0.22, -0.16)
+  const tailLength = spec.fluffy ? 0.3 : 0.6
+  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, tailLength, 6), coat)
+  tailMesh.position.set(0, tailLength * 0.36, -tailLength * 0.27)
   tailMesh.rotation.x = -0.75
   tail.add(tailMesh)
   rig.add(tail)
@@ -275,17 +298,32 @@ function buildFarmer(spec: Critter): Parts {
   frown.position.set(0, -0.17, 0.29)
   frown.visible = false
   head.add(frown)
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.66, 0.66, 0.05, 20), straw)
-  brim.position.y = 0.24
-  head.add(brim)
-  const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.32, 16), straw)
-  crown.position.y = 0.42
+  // His black cap, bill forward, with the light patch on the front, and the goatee.
+  const cap = mat("#161616", 0.8)
+  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 12, 0, TAU, 0, Math.PI / 2), cap)
+  crown.position.y = 0.06
   head.add(crown)
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.345, 0.345, 0.07, 16), mat("#5a3a24"))
-  band.position.y = 0.3
-  head.add(band)
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.335, 0.335, 0.06, 16), cap)
+  rim.position.y = 0.06
+  head.add(rim)
+  const bill = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.03, 0.3), cap)
+  bill.position.set(0, 0.05, 0.4)
+  bill.rotation.x = 0.12
+  head.add(bill)
+  const badge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.02), mat("#d9d4c7", 0.7))
+  badge.position.set(0, 0.2, 0.31)
+  head.add(badge)
+  const goatee = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), dark)
+  goatee.scale.set(1.1, 0.7, 0.6)
+  goatee.position.set(0, -0.22, 0.24)
+  head.add(goatee)
+  const stubble = new THREE.Mesh(new THREE.SphereGeometry(0.29, 14, 10, 0, TAU, Math.PI * 0.62, Math.PI * 0.2), mat("#3a2f28", 0.9))
+  stubble.position.y = 0.04
+  stubble.scale.set(1.03, 1.03, 1.03)
+  head.add(stubble)
+  void straw
 
-  return { group, rig, head, legs, arms, brows, smile, frown, top: 3.0 }
+  return { group, rig, head, legs, arms, brows, smile, frown, top: 2.85 }
 }
 
 // ---------------------------------------------------------------- the runners

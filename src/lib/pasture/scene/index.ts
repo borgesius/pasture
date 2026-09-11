@@ -44,6 +44,8 @@ export type PastureScene = {
   screenPosition(id: string): { x: number; y: number } | undefined
   /** Click a critter: the farmer stops and tells you off (his line comes back); a pet hops. */
   poke(id: string): string | undefined
+  /** Put the camera on a cow or a critter, `distance` away along the current view direction. */
+  focus(id: string, distance?: number): boolean
   dispose(): void
 }
 
@@ -748,6 +750,17 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     },
     poke(id) {
       return critters.poke(id)
+    },
+    focus(id, distance = 14) {
+      const cow = cows.get(id)
+      const spot = cow ? { x: cow.x, y: cow.parts.rig.position.y + 0.9 * cow.spec.breed.size, z: cow.z } : critters.position(id)
+      if (!spot) return false
+      touched = true
+      const direction = camera.position.clone().sub(controls.target).normalize()
+      controls.target.set(spot.x, spot.y * 0.6, spot.z)
+      camera.position.copy(controls.target).addScaledVector(direction, Math.max(controls.minDistance, distance))
+      controls.update()
+      return true
     },
     dispose() {
       cancelAnimationFrame(raf)
