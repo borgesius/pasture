@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "media": "node scripts/media/record-hand-of-god.mjs docs/media/hand-of-god.webm && ffmpeg -y -loglevel error -ss 3.5 -i docs/media/hand-of-god.webm -c:v libx264 -pix_fmt yuv420p -crf 25 -r 30 -movflags +faststart docs/media/hand-of-god.mp4 && ffmpeg -y -loglevel error -ss 3.5 -t 11 -i docs/media/hand-of-god.webm -vf \"fps=10,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5\" docs/media/hand-of-god.gif"
   },
   "dependencies": {
     "next": "16.3.4",
@@ -22,6 +23,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@types/three": "0.185.4",
+    "playwright-core": "^1.56.1",
     "typescript": "5.9.3",
     "vitest": "5.0.0"
   }

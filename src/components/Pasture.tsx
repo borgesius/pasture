@@ -89,6 +89,15 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     return () => clearInterval(tick)
   }, [])
 
+  // The deployment's default organization may not be one of this person's; start them on theirs.
+  useEffect(() => {
+    if (!viewer || !ready) return
+    setSettings((current) => {
+      if (current.scope === "me" || viewer.orgs.some((org) => org.login === current.scope)) return current
+      return { ...current, scope: viewer.orgs[0]?.login ?? "me" }
+    })
+  }, [viewer, ready])
+
   useEffect(() => {
     let cancelled = false
     fetch("/api/orgs", { cache: "no-store" })
