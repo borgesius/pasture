@@ -100,7 +100,7 @@ reload() {
 }
 reload dev.bronson.pasture
 for i in $(seq 1 30); do
-  if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/pasture"; then break; fi
+  if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/pasture" 2>/dev/null; then break; fi
   sleep 1
 done
 curl -fsS -o /dev/null "http://127.0.0.1:$PORT/pasture" || { echo "server did not come up; see $LOGS/pasture.log" >&2; exit 1; }
