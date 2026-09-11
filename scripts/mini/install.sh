@@ -79,19 +79,16 @@ cat >"$AGENTS/dev.bronson.pasture-tv.plist" <<PLIST
   <key>Label</key><string>dev.bronson.pasture-tv</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$CHROME</string>
-    <string>--user-data-dir=$HOME/.config/pasture-tv</string>
-    <string>--kiosk</string>
-    <string>--no-first-run</string>
-    <string>--no-default-browser-check</string>
-    <string>--noerrdialogs</string>
-    <string>--disable-session-crashed-bubble</string>
-    <string>--disable-features=TranslateUI</string>
-    <string>--autoplay-policy=no-user-gesture-required</string>
-    <string>--window-position=0,0</string>
-    <string>--remote-debugging-port=$TV_DEBUG_PORT</string>
-    <string>http://127.0.0.1:$PORT/pasture</string>
+    <string>$ROOT/scripts/mini/pasture-tv.sh</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key><string>$HOME</string>
+    <key>PASTURE_PORT</key><string>$PORT</string>
+    <key>PASTURE_TV_DEBUG_PORT</key><string>$TV_DEBUG_PORT</string>
+    <key>PASTURE_CHROME</key><string>$CHROME</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
@@ -101,8 +98,14 @@ cat >"$AGENTS/dev.bronson.pasture-tv.plist" <<PLIST
 </plist>
 PLIST
 
+# Stop a service and wait until launchd has really let go of it before starting it again;
+# bootout returns before a slow process (Chrome) has exited.
 reload() {
   launchctl bootout "gui/$UID_NUM/$1" 2>/dev/null || true
+  for i in $(seq 1 30); do
+    launchctl print "gui/$UID_NUM/$1" >/dev/null 2>&1 || break
+    sleep 1
+  done
   launchctl bootstrap "gui/$UID_NUM" "$AGENTS/$1.plist"
 }
 reload dev.bronson.pasture
