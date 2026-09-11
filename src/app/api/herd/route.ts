@@ -6,6 +6,8 @@ import { resolveToken } from "@/lib/token"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+// A GitHub search over a busy organization takes several seconds; the platform default of ten is too tight.
+export const maxDuration = 60
 
 const SCOPE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 

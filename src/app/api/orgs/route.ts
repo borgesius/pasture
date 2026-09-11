@@ -4,6 +4,8 @@ import { resolveToken } from "@/lib/token"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+// A GitHub search over a busy organization takes several seconds; the platform default of ten is too tight.
+export const maxDuration = 60
 
 export async function GET(req: Request) {
   const token = await resolveToken(req)
