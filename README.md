@@ -18,7 +18,12 @@ PR is lowered in from the sky. A closed one is taken away.
 
 Everyone on the team wears a different coloured cowbell collar, and the who's who menu says which
 colour is whose. Hover a cow for its PR. Click it to lift it up, legs dangling, and read what is
-holding it up. Double-click to open the PR on GitHub. It moos.
+holding it up. Double-click to open the PR on GitHub. It moos. The bell in the header makes every
+cow moo as the hand of god picks it up (off by default; `?moo=1` in the URL turns it on for a TV).
+
+Kobi the farmer walks the fences with a pitchfork, Moon and Bean at his heels. Click him and he
+tells you to get back to work. The rest of the office pets run laps around the pens having a nice
+time: Waffles, and the two black cats, Felix and Haru. Hover any of them for an introduction.
 
 <img src="docs/media/pasture.jpg" alt="the field: 125 merged cows out back, 55 open ones in the front pens" width="840" />
 

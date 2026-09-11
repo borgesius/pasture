@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { assignCollars, collarIndex } from "@/lib/pasture/collars"
+import { FARMER_ID, critterByID } from "@/lib/pasture/critters"
 import { advanceLimbo, buildMembers, penCounts, personCounts, type Limbo } from "@/lib/pasture/members"
 import { moo } from "@/lib/pasture/moo"
-import { createPastureScene, type CowSpec, type PastureScene } from "@/lib/pasture/scene"
+import { createPastureScene, type CowSpec, type PastureScene, type PickTarget } from "@/lib/pasture/scene"
 import { PASTURE_TIMEFRAMES, cowID, type Herd, type OpenMode, type Viewer } from "@/lib/pasture/types"
 import { HoverCard } from "./HoverCard"
 import { Inspector } from "./Inspector"
@@ -18,7 +19,7 @@ const HERD_CAP = 300
 const REFRESH_MS = 60_000
 const STORAGE_KEY = "pasture.settings"
 
-type Settings = { scope: string; days: number; openMode: OpenMode }
+type Settings = { scope: string; days: number; openMode: OpenMode; mooOnMove: boolean }
 type Loaded = { key: string; data: Herd }
 
 const settingsKey = (s: Settings) => `${s.scope}|${s.days}|${s.openMode}`
@@ -30,11 +31,16 @@ function readStoredSettings(fallback: Settings): Settings {
     if (stored?.scope) next.scope = stored.scope
     if (stored?.days && Number.isFinite(stored.days)) next.days = stored.days
     if (stored?.openMode === "all" || stored?.openMode === "active") next.openMode = stored.openMode
+    if (typeof stored?.mooOnMove === "boolean") next.mooOnMove = stored.mooOnMove
   } catch {
     // Storage can be missing or locked down; the defaults are fine.
   }
-  const fromUrl = new URLSearchParams(window.location.search).get("org")
+  const params = new URLSearchParams(window.location.search)
+  const fromUrl = params.get("org")
   if (fromUrl) next.scope = fromUrl
+  // `?moo=1` (or 0) is for a TV, which has nobody to click the bell.
+  const mooParam = params.get("moo")
+  if (mooParam === "1" || mooParam === "0") next.mooOnMove = mooParam === "1"
   return next
 }
 
@@ -46,15 +52,16 @@ function readStoredSettings(fallback: Settings): Settings {
  * to the right pen.
  */
 export default function Pasture(props: { defaultScope: string; tokenMode: boolean; signOut?: () => Promise<void> }) {
-  const [settings, setSettings] = useState<Settings>({ scope: props.defaultScope, days: 1, openMode: "active" })
+  const [settings, setSettings] = useState<Settings>({ scope: props.defaultScope, days: 1, openMode: "active", mooOnMove: false })
   const [ready, setReady] = useState(false)
   const [viewer, setViewer] = useState<Viewer>()
   const [herd, setHerd] = useState<Loaded>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
   const [limbo, setLimbo] = useState<Limbo>(new Map())
-  const [hover, setHover] = useState<{ id: string; x: number; y: number }>()
+  const [hover, setHover] = useState<{ target: PickTarget; x: number; y: number }>()
   const [selected, setSelected] = useState<string>()
+  const [bubble, setBubble] = useState<{ id: string; text: string; x: number; y: number }>()
   const [focus, setFocus] = useState<string>()
   const [mooing, setMooing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -181,6 +188,8 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   const byId = useMemo(() => new Map(members.map((member) => [member.id, member])), [members])
   const byIdRef = useRef(byId)
   byIdRef.current = byId
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
   const collars = useMemo(() => assignCollars(members.map((member) => member.author)), [members])
   const counts = useMemo(() => penCounts(members), [members])
   const avatars = useMemo(() => new Map((data?.people ?? []).map((person) => [person.login, person.avatarUrl])), [data])
@@ -201,7 +210,8 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     [members, collars],
   )
   const current = selected ? byId.get(selected) : undefined
-  const hovered = hover ? byId.get(hover.id) : undefined
+  const hoveredCow = hover?.target.kind === "cow" ? byId.get(hover.target.id) : undefined
+  const hoveredCritter = hover?.target.kind === "critter" ? critterByID(hover.target.id) : undefined
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -211,11 +221,26 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
       return rect ? { x: x - rect.left, y: y - rect.top } : { x, y }
     }
     const scene = createPastureScene(canvas, {
-      onHover: (id, x, y) => setHover(id ? { id, ...local(x, y) } : undefined),
-      onSelect: (id) => setSelected(id),
+      onHover: (target, x, y) => setHover(target ? { target, ...local(x, y) } : undefined),
+      onSelect: (target) => {
+        if (!target || target.kind === "cow") {
+          setSelected(target?.id)
+          return
+        }
+        const line = scene.poke(target.id)
+        if (line) {
+          const at = scene.screenPosition(target.id)
+          setBubble({ id: target.id, text: line, x: at?.x ?? 0, y: at?.y ?? 0 })
+        }
+      },
       onOpen: (id) => {
         const member = byIdRef.current.get(id)
         if (member) window.open(member.pr.url, "_blank", "noopener")
+      },
+      onCarry: (id) => {
+        if (!settingsRef.current.mooOnMove) return
+        const member = byIdRef.current.get(id)
+        void moo(member?.breed.size ?? 1).catch(() => undefined)
       },
     })
     sceneRef.current = scene
@@ -239,6 +264,21 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     }
   }, [specs, data, key, byId, selected])
   useEffect(() => sceneRef.current?.select(selected), [selected])
+  useEffect(() => {
+    if (!bubble) return
+    let raf = 0
+    const follow = () => {
+      const at = sceneRef.current?.screenPosition(bubble.id)
+      if (at) setBubble((current) => (current && current.id === bubble.id && current.text === bubble.text ? { ...current, x: at.x, y: at.y } : current))
+      raf = requestAnimationFrame(follow)
+    }
+    raf = requestAnimationFrame(follow)
+    const timer = setTimeout(() => setBubble(undefined), 4200)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
+  }, [bubble?.id, bubble?.text]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => sceneRef.current?.setFilter(focus ? new Set([focus]) : undefined), [focus])
   useEffect(() => sceneRef.current?.setSign("merged", `Merged, ${timeframeLabel(settings.days)}`), [settings.days])
 
@@ -314,6 +354,15 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
           </button>
         </div>
         <WhosWho people={people} focus={focus} onFocus={setFocus} />
+        <button
+          type="button"
+          className="textbtn"
+          aria-pressed={settings.mooOnMove}
+          title={settings.mooOnMove ? "Cows moo when the hand of god picks them up. Click to hush them." : "Silent. Click and every cow moos when it is picked up."}
+          onClick={() => update({ mooOnMove: !settings.mooOnMove })}
+        >
+          {settings.mooOnMove ? "🔔 Moo on move" : "🔕 Moo on move"}
+        </button>
         <button type="button" className={`iconbtn${loading ? " spinning" : ""}`} aria-label="Refresh" title="Refresh" disabled={loading} onClick={() => void load(undefined, true)}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
@@ -350,8 +399,22 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
           </div>
         ) : null}
 
-        {hovered && hover && hovered.id !== selected ? (
-          <HoverCard member={hovered} collar={collars.get(hovered.author)} avatar={avatars.get(hovered.author) ?? null} x={hover.x} y={hover.y} now={now} scope={settings.scope} />
+        {hoveredCow && hover && hoveredCow.id !== selected ? (
+          <HoverCard member={hoveredCow} collar={collars.get(hoveredCow.author)} avatar={avatars.get(hoveredCow.author) ?? null} x={hover.x} y={hover.y} now={now} scope={settings.scope} />
+        ) : null}
+        {hoveredCritter && hover ? (
+          <div className="hovercard" style={{ left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }}>
+            <div className="title">
+              {hoveredCritter.name}
+              {hoveredCritter.id === FARMER_ID ? " · the farmer" : hoveredCritter.kind === "dog" ? " · dog" : " · cat"}
+            </div>
+            <div className="meta">{hoveredCritter.blurb}</div>
+          </div>
+        ) : null}
+        {bubble ? (
+          <div className="bubble" style={{ left: `${bubble.x}px`, top: `${bubble.y}px` }} role="status">
+            {bubble.text}
+          </div>
         ) : null}
 
         {current ? (

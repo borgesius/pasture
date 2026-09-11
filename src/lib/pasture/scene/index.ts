@@ -4,10 +4,14 @@ import { mulberry32 } from "@/lib/rng"
 import { penFor, type PenID } from "../pens"
 import { paintSign } from "./atlas"
 import { buildCow, disposeCow, gripHeight, headHeight, type CowParts, type CowSpec } from "./cow"
+import { createCritters } from "./critters"
 import { buildHand, curlHand } from "./hand"
 import { POND, buildScenery, inPond } from "./scenery"
 
 export type { CowSpec } from "./cow"
+
+/** What the pointer is over: a cow (a pull request) or one of the field's residents. */
+export type PickTarget = { kind: "cow"; id: string } | { kind: "critter"; id: string }
 
 /**
  * The pasture: five fenced pens on a green field (drafts, awaiting review,
@@ -21,10 +25,12 @@ export type { CowSpec } from "./cow"
  */
 
 export type PastureEvents = {
-  /** Pointer is over a cow (or left one); x/y are client coordinates. */
-  onHover(id: string | undefined, x: number, y: number): void
-  onSelect(id: string | undefined): void
+  /** Pointer is over a cow or a critter (or left one); x/y are client coordinates. */
+  onHover(target: PickTarget | undefined, x: number, y: number): void
+  onSelect(target: PickTarget | undefined): void
   onOpen(id: string): void
+  /** The hand of god has just taken hold of a cow (a move, an arrival or a departure). */
+  onCarry?(id: string): void
 }
 
 export type PastureScene = {
@@ -34,8 +40,10 @@ export type PastureScene = {
   select(id: string | undefined): void
   /** Dim every cow whose author is not in the set; `undefined` clears it. */
   setFilter(authors: Set<string> | undefined): void
-  /** Pixel position (relative to the canvas) above a cow's head, for labels. */
+  /** Pixel position (relative to the canvas) above a cow's or a critter's head, for labels. */
   screenPosition(id: string): { x: number; y: number } | undefined
+  /** Click a critter: the farmer stops and tells you off (his line comes back); a pet hops. */
+  poke(id: string): string | undefined
   dispose(): void
 }
 
@@ -112,6 +120,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   const scenery = buildScenery(scene)
   const hand = buildHand()
   scene.add(hand.group)
+  const critters = createCritters(scene)
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500)
   camera.position.set(0, 42, 80)
@@ -156,7 +165,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   let pointerInside = false
   let pointerClient = { x: 0, y: 0 }
   const raycaster = new THREE.Raycaster()
-  let hoveredID: string | undefined
+  let hovered: PickTarget | undefined
   let down: { x: number; y: number; at: number } | undefined
 
   // Until someone drags or zooms, the camera backs up just enough that all five pens fit across the view.
@@ -195,8 +204,8 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   const onPointerMove = (event: PointerEvent) => updatePointer(event)
   const onPointerLeave = () => {
     pointerInside = false
-    if (hoveredID !== undefined) {
-      hoveredID = undefined
+    if (hovered !== undefined) {
+      hovered = undefined
       canvas.style.cursor = ""
       events.onHover(undefined, pointerClient.x, pointerClient.y)
     }
@@ -216,8 +225,8 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   }
   const onDoubleClick = (event: MouseEvent) => {
     updatePointer(event)
-    const id = pick()
-    if (id) events.onOpen(id)
+    const target = pick()
+    if (target?.kind === "cow") events.onOpen(target.id)
   }
   canvas.addEventListener("pointermove", onPointerMove)
   canvas.addEventListener("pointerleave", onPointerLeave)
@@ -225,14 +234,17 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   canvas.addEventListener("pointerup", onPointerUp)
   canvas.addEventListener("dblclick", onDoubleClick)
 
-  function pick(): string | undefined {
+  function pick(): PickTarget | undefined {
     raycaster.setFromCamera(pointer, camera)
-    const hits = raycaster.intersectObjects(cowRoot.children, true)
+    const hits = raycaster.intersectObjects([cowRoot, critters.root], true)
     for (const hit of hits) {
-      const id = hit.object.userData.cowID as string | undefined
-      if (!id) continue
-      const cow = cows.get(id)
-      return cow && !cow.hidden ? id : undefined
+      const cowID = hit.object.userData.cowID as string | undefined
+      if (cowID) {
+        const cow = cows.get(cowID)
+        return cow && !cow.hidden ? { kind: "cow", id: cowID } : undefined
+      }
+      const critterID = hit.object.userData.critterID as string | undefined
+      if (critterID) return { kind: "critter", id: critterID }
     }
     return undefined
   }
@@ -511,6 +523,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
         cow.hidden = false
         cow.parts.group.visible = true
         holdCow(cow)
+        events.onCarry?.(cow.spec.id)
       } else {
         if (!cow.leaving) continue
         active = { transfer, phase: "descend", t: 0, from: { x: cow.x, z: cow.z }, to: { x: cow.x, z: cow.z }, cow }
@@ -542,7 +555,10 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
         break
       case "grab":
         curlHand(hand, e)
-        if (u >= 1) holdCow(cow)
+        if (u >= 1) {
+          holdCow(cow)
+          events.onCarry?.(cow.spec.id)
+        }
         break
       case "lift":
         placeHand(a.from.x, top + (CARRY_Y - top) * e, a.from.z)
@@ -622,6 +638,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     stepHand(dt)
     for (const cow of cows.values()) stepCow(cow, dt, t)
     if (frame % 3 === 0 && cows.size > 1) separate()
+    critters.tick(dt, t, camera)
     placeShadows()
     scenery.tick(t)
     for (const cloud of scenery.clouds) {
@@ -630,11 +647,11 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     }
     controls.update()
     if (pointerInside && frame % 2 === 0) {
-      const id = pick()
-      if (id !== hoveredID) {
-        hoveredID = id
-        canvas.style.cursor = id ? "pointer" : ""
-        events.onHover(id, pointerClient.x, pointerClient.y)
+      const target = pick()
+      if (target?.id !== hovered?.id || target?.kind !== hovered?.kind) {
+        hovered = target
+        canvas.style.cursor = target ? "pointer" : ""
+        events.onHover(target, pointerClient.x, pointerClient.y)
       }
     }
     renderer.render(scene, camera)
@@ -717,10 +734,20 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     },
     screenPosition(id) {
       const cow = cows.get(id)
-      if (!cow || cow.hidden) return undefined
-      tmp.set(cow.x, cow.parts.rig.position.y + headHeight(cow.spec.breed.size), cow.z).project(camera)
+      if (cow) {
+        if (cow.hidden) return undefined
+        tmp.set(cow.x, cow.parts.rig.position.y + headHeight(cow.spec.breed.size), cow.z)
+      } else {
+        const spot = critters.position(id)
+        if (!spot) return undefined
+        tmp.set(spot.x, spot.y, spot.z)
+      }
+      tmp.project(camera)
       if (tmp.z > 1) return undefined
       return { x: ((tmp.x + 1) / 2) * canvas.clientWidth, y: ((1 - tmp.y) / 2) * canvas.clientHeight }
+    },
+    poke(id) {
+      return critters.poke(id)
     },
     dispose() {
       cancelAnimationFrame(raf)
@@ -731,6 +758,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       canvas.removeEventListener("pointerup", onPointerUp)
       canvas.removeEventListener("dblclick", onDoubleClick)
       controls.dispose()
+      critters.dispose()
       for (const cow of cows.values()) disposeCow(cow.parts)
       cows.clear()
       scene.traverse((object) => {
