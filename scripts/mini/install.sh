@@ -6,6 +6,7 @@
 #                           gh CLI's token at request time (nothing stored), so it never
 #                           needs a sign-in and never logs out.
 #   dev.bronson.pasture-tv  a kiosk Chrome window on the field, relaunched if it closes.
+#   dev.bronson.pasture-awake  (PASTURE_AWAKE=1) caffeinate, so a laptop feeding a TV never sleeps.
 #
 # Re-run after `git pull` to rebuild and restart. `scripts/mini/pasture-tv off` hides the
 # kiosk without touching the server. The server binds to localhost on purpose: in gh token
@@ -118,4 +119,24 @@ echo "server: http://127.0.0.1:$PORT/pasture"
 if [ "${PASTURE_TV:-1}" = "1" ]; then
   reload dev.bronson.pasture-tv
   echo "tv: kiosk Chrome loaded (scripts/mini/pasture-tv off to hide it)"
+fi
+if [ "${PASTURE_AWAKE:-0}" = "1" ]; then
+  cat >"$AGENTS/dev.bronson.pasture-awake.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.bronson.pasture-awake</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-dis</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+PLIST
+  reload dev.bronson.pasture-awake
+  echo "awake: caffeinate loaded (display and system sleep off while on power)"
 fi
