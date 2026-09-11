@@ -6,7 +6,7 @@
 
 <img src="docs/media/hand-of-god.gif" alt="the hand of god lifts a cow out of the awaiting-review pen and carries it to ready to merge" width="840" />
 
-▶️ [Watch it with sound](https://cdn.jsdelivr.net/gh/callumreid/pasture@main/docs/media/hand-of-god.mp4) · 🌾 [**pasture-six.vercel.app**](https://pasture-six.vercel.app)
+▶️ [Watch it with sound](https://cdn.jsdelivr.net/gh/callumreid/pasture@main/docs/media/hand-of-god.mp4) · 🌾 [**pasture-six.vercel.app**](https://pasture-six.vercel.app) · 🐄 [**cow code**](https://github.com/callumreid/cow_code) for the full bovine agent experience
 
 </div>
 
@@ -96,5 +96,11 @@ npm run build       # production build
 npm run media       # re-record docs/media/hand-of-god.* from a running dev server
 ```
 
-Grown out of the Pasture in [cow code](https://github.com/callumreid/cow_code), which only ever
-showed one person's PRs and only inside cow code.
+## 🐄 Want the whole cow?
+
+This is one field out of [**cow code**](https://github.com/callumreid/cow_code), a full terminal
+and desktop AI coding agent lovingly led out to pasture. Over there the Pasture is a panel beside
+your sessions, the cows are your own PRs, and the same farm keeps them updated, fixes their review
+comments and merges them when they are ready, with the Farmer's Office watching over the lot. This
+repo is only the field, for a whole team, on a TV, with no agent required. For the full bovine agent
+experience, go get the cow: <https://github.com/callumreid/cow_code>.
