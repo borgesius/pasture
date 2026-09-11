@@ -60,7 +60,7 @@ export const CRITTERS: Critter[] = [
     id: "bean",
     name: "Bean",
     kind: "dog",
-    blurb: "Kobi's other one. Sits like a person. Famous for the bean lean.",
+    blurb: "Best dog in the office. Sits like a person. Famous for the bean lean.",
     body: "#e6d7bd",
     patch: "#f7f2ea",
     eyes: "#4a2e1c",
