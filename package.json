@@ -1,0 +1,28 @@
+{
+  "name": "pasture",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Every pull request on your team is a cow. Watch them move from pen to pen as they get reviewed, fixed and merged.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "next-auth": "5.0.0-beta.32",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.185.4",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

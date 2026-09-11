@@ -1,0 +1,365 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { assignCollars, collarIndex } from "@/lib/pasture/collars"
+import { advanceLimbo, buildMembers, penCounts, personCounts, type Limbo } from "@/lib/pasture/members"
+import { moo } from "@/lib/pasture/moo"
+import { createPastureScene, type CowSpec, type PastureScene } from "@/lib/pasture/scene"
+import { PASTURE_TIMEFRAMES, cowID, type Herd, type OpenMode, type Viewer } from "@/lib/pasture/types"
+import { HoverCard } from "./HoverCard"
+import { Inspector } from "./Inspector"
+import { WhosWho, type WhosWhoPerson } from "./WhosWho"
+import { ScopePicker } from "./ScopePicker"
+import { plural, timeframeLabel } from "./format"
+
+/** Past this many the field turns into a stampede and the frame rate goes with it. */
+const HERD_CAP = 300
+/** While the field is open, GitHub is re-read this often so stage changes get their hand-of-god moment. */
+const REFRESH_MS = 60_000
+const STORAGE_KEY = "pasture.settings"
+
+type Settings = { scope: string; days: number; openMode: OpenMode }
+type Loaded = { key: string; data: Herd }
+
+const settingsKey = (s: Settings) => `${s.scope}|${s.days}|${s.openMode}`
+
+function readStoredSettings(fallback: Settings): Settings {
+  const next = { ...fallback }
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<Settings> | null
+    if (stored?.scope) next.scope = stored.scope
+    if (stored?.days && Number.isFinite(stored.days)) next.days = stored.days
+    if (stored?.openMode === "all" || stored?.openMode === "active") next.openMode = stored.openMode
+  } catch {
+    // Storage can be missing or locked down; the defaults are fine.
+  }
+  const fromUrl = new URLSearchParams(window.location.search).get("org")
+  if (fromUrl) next.scope = fromUrl
+  return next
+}
+
+/**
+ * A green field with a pen for every stage of a pull request's life and one
+ * cow per pull request on the team, each wearing its author's collar. Hover
+ * a cow for its PR, click to lift it and read the details, double-click to
+ * open it on GitHub. When a PR moves stage, the hand of god carries its cow
+ * to the right pen.
+ */
+export default function Pasture(props: { defaultScope: string; tokenMode: boolean; signOut?: () => Promise<void> }) {
+  const [settings, setSettings] = useState<Settings>({ scope: props.defaultScope, days: 1, openMode: "active" })
+  const [ready, setReady] = useState(false)
+  const [viewer, setViewer] = useState<Viewer>()
+  const [herd, setHerd] = useState<Loaded>()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string>()
+  const [limbo, setLimbo] = useState<Limbo>(new Map())
+  const [hover, setHover] = useState<{ id: string; x: number; y: number }>()
+  const [selected, setSelected] = useState<string>()
+  const [focus, setFocus] = useState<string>()
+  const [mooing, setMooing] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  const hostRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const sceneRef = useRef<PastureScene>(undefined)
+  const shownKeyRef = useRef<string>(undefined)
+  const limboKeyRef = useRef<string>(undefined)
+  const previousOpenRef = useRef<Herd["open"]>(undefined)
+  const key = settingsKey(settings)
+
+  // Settings come from the URL, then whatever was used last time.
+  useEffect(() => {
+    setSettings((current) => readStoredSettings(current))
+    setReady(true)
+  }, [])
+  useEffect(() => {
+    if (!ready) return
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    } catch {
+      // ignore
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.set("org", settings.scope)
+    window.history.replaceState(null, "", url)
+  }, [ready, settings])
+
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(tick)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/orgs", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 401) window.location.assign("/")
+        const body = (await response.json()) as Viewer & { error?: string }
+        if (!response.ok) throw new Error(body.error ?? response.statusText)
+        if (!cancelled) setViewer(body)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const load = useCallback(
+    async (signal?: AbortSignal, fresh = false) => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({ scope: settings.scope, days: String(settings.days), open: settings.openMode })
+        if (fresh) params.set("fresh", "1")
+        const response = await fetch(`/api/herd?${params}`, { signal, cache: "no-store" })
+        if (response.status === 401) {
+          window.location.assign("/")
+          return
+        }
+        const body = (await response.json()) as Herd & { error?: string }
+        if (!response.ok) throw new Error(body.error ?? response.statusText)
+        setHerd({ key, data: body })
+        setError(undefined)
+      } catch (cause) {
+        if (signal?.aborted) return
+        setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        if (!signal?.aborted) setLoading(false)
+      }
+    },
+    [settings, key],
+  )
+
+  useEffect(() => {
+    if (!ready) return
+    const controller = new AbortController()
+    void load(controller.signal)
+    // Longer windows cost more searches per read, so they are re-read less often.
+    const timer = setInterval(() => void load(undefined, true), settings.days <= 1 ? REFRESH_MS : REFRESH_MS * 3)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      controller.abort()
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [ready, load, settings.days])
+
+  // Open PRs that just vanished are held in place until the merged search
+  // catches up, so a merge reads as "carried to the merged pen", not "poof".
+  useEffect(() => {
+    if (!herd) return
+    const at = Date.now()
+    if (limboKeyRef.current !== herd.key) {
+      limboKeyRef.current = herd.key
+      previousOpenRef.current = undefined
+      setLimbo(new Map())
+    }
+    const before = previousOpenRef.current ?? herd.data.open
+    previousOpenRef.current = herd.data.open
+    const merged = new Set(herd.data.merged.map(cowID))
+    setLimbo((current) => advanceLimbo(current, before, herd.data.open, merged, at))
+  }, [herd])
+  useEffect(() => {
+    if (!herd) return
+    const merged = new Set(herd.data.merged.map(cowID))
+    setLimbo((current) => (current.size ? advanceLimbo(current, herd.data.open, herd.data.open, merged, now) : current))
+  }, [now, herd])
+
+  const data = herd?.key === key ? herd.data : undefined
+  const members = useMemo(() => (data ? buildMembers(data.open, data.merged, limbo, HERD_CAP) : []), [data, limbo])
+  const byId = useMemo(() => new Map(members.map((member) => [member.id, member])), [members])
+  const byIdRef = useRef(byId)
+  byIdRef.current = byId
+  const collars = useMemo(() => assignCollars(members.map((member) => member.author)), [members])
+  const counts = useMemo(() => penCounts(members), [members])
+  const avatars = useMemo(() => new Map((data?.people ?? []).map((person) => [person.login, person.avatarUrl])), [data])
+  const people = useMemo<WhosWhoPerson[]>(
+    () => [...personCounts(members).keys()].sort().map((login) => ({ login, avatarUrl: avatars.get(login) ?? null, collar: collars.get(login) })),
+    [members, avatars, collars],
+  )
+  const specs = useMemo<CowSpec[]>(
+    () =>
+      members.map((member) => ({
+        id: member.id,
+        breed: member.breed,
+        seed: member.seed,
+        pen: member.pen,
+        author: member.author,
+        collar: collarIndex(collars.get(member.author) ?? ""),
+      })),
+    [members, collars],
+  )
+  const current = selected ? byId.get(selected) : undefined
+  const hovered = hover ? byId.get(hover.id) : undefined
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const local = (x: number, y: number) => {
+      const rect = hostRef.current?.getBoundingClientRect()
+      return rect ? { x: x - rect.left, y: y - rect.top } : { x, y }
+    }
+    const scene = createPastureScene(canvas, {
+      onHover: (id, x, y) => setHover(id ? { id, ...local(x, y) } : undefined),
+      onSelect: (id) => setSelected(id),
+      onOpen: (id) => {
+        const member = byIdRef.current.get(id)
+        if (member) window.open(member.pr.url, "_blank", "noopener")
+      },
+    })
+    sceneRef.current = scene
+    return () => {
+      scene.dispose()
+      sceneRef.current = undefined
+    }
+  }, [])
+
+  // Switching org or timeframe swaps the whole herd; that is a new field, not a migration.
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene || !data) return
+    const animate = shownKeyRef.current === key
+    shownKeyRef.current = key
+    scene.setCows(specs, animate)
+    if (selected && !byId.has(selected)) setSelected(undefined)
+    if (process.env.NODE_ENV !== "production") {
+      // Dev harness: `__pasture.scene.setCows(specs, true)` from the console plays the hand of god.
+      ;(window as unknown as { __pasture?: unknown }).__pasture = { scene, specs }
+    }
+  }, [specs, data, key, byId, selected])
+  useEffect(() => sceneRef.current?.select(selected), [selected])
+  useEffect(() => sceneRef.current?.setFilter(focus ? new Set([focus]) : undefined), [focus])
+  useEffect(() => sceneRef.current?.setSign("merged", `Merged, ${timeframeLabel(settings.days)}`), [settings.days])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      // An open who's who menu takes the Escape for itself.
+      if (document.querySelector(".whoswho-menu")) return
+      if (selected) setSelected(undefined)
+      else if (focus) setFocus(undefined)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [selected, focus])
+
+  const speak = async () => {
+    if (mooing || !current) return
+    setMooing(true)
+    await moo(current.breed.size).catch(() => undefined)
+    setMooing(false)
+  }
+
+  const update = (patch: Partial<Settings>) => setSettings((current) => ({ ...current, ...patch }))
+
+  const summary = () => {
+    if (!data) return loading ? "Rounding up the herd…" : error ? "The field is empty until GitHub answers." : ""
+    const parts: string[] = []
+    const mergedShown = members.filter((member) => member.kind === "merged").length
+    const mergedTotal = data.merged.length
+    const more = data.truncatedMerged ? "+" : ""
+    parts.push(
+      mergedShown < mergedTotal || more
+        ? `${mergedShown} of ${mergedTotal}${more} merged ${timeframeLabel(data.days)}`
+        : `${mergedTotal} merged ${timeframeLabel(data.days)}`,
+    )
+    const open = counts.draft + counts.awaiting + counts.changes + counts.ready
+    const stages = [
+      counts.draft ? plural(counts.draft, "draft") : "",
+      counts.awaiting ? `${counts.awaiting} awaiting review` : "",
+      counts.changes ? `${counts.changes} changes requested` : "",
+      counts.ready ? `${counts.ready} ready` : "",
+    ].filter(Boolean)
+    parts.push(`${open} open${data.openMode === "active" ? ` (touched ${timeframeLabel(data.days)})` : ""}${stages.length ? `: ${stages.join(" · ")}` : ""}`)
+    parts.push(plural(people.length, "person", "people"))
+    return parts.join(" · ")
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <a className="brand" href="/pasture">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/img/cow-side.png" alt="" />
+          <h1>Pasture</h1>
+        </a>
+        <ScopePicker value={settings.scope} viewer={viewer} onChange={(scope) => update({ scope })} />
+        <span className="summary" title={summary()}>
+          {summary()}
+        </span>
+        <div className="segmented" role="group" aria-label="Timeframe">
+          {PASTURE_TIMEFRAMES.map((frame) => (
+            <button key={frame.id} type="button" aria-pressed={settings.days === frame.days} onClick={() => update({ days: frame.days })}>
+              {frame.label}
+            </button>
+          ))}
+        </div>
+        <div className="segmented" role="group" aria-label="Which open pull requests">
+          <button type="button" aria-pressed={settings.openMode === "active"} onClick={() => update({ openMode: "active" })} title="Open PRs touched inside the timeframe">
+            Active
+          </button>
+          <button type="button" aria-pressed={settings.openMode === "all"} onClick={() => update({ openMode: "all" })} title="Every open PR, however old">
+            All open
+          </button>
+        </div>
+        <WhosWho people={people} focus={focus} onFocus={setFocus} />
+        <button type="button" className={`iconbtn${loading ? " spinning" : ""}`} aria-label="Refresh" title="Refresh" disabled={loading} onClick={() => void load(undefined, true)}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+            <path d="M13.5 2.5v3h-3" />
+          </svg>
+        </button>
+        {props.signOut ? (
+          <div className="account">
+            {viewer?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img className="avatar" src={viewer.avatarUrl} alt="" referrerPolicy="no-referrer" style={{ boxShadow: "none" }} />
+            ) : null}
+            <form action={props.signOut}>
+              <button type="submit" className="textbtn">
+                Sign out
+              </button>
+            </form>
+          </div>
+        ) : null}
+      </header>
+
+      <div ref={hostRef} className="field">
+        <canvas ref={canvasRef} />
+
+        {loading && !data ? <div className="overlay">Rounding up the herd…</div> : null}
+        {error ? (
+          <div className="notice">
+            <span className="pill danger">{error}</span>
+          </div>
+        ) : null}
+        {data && !error && members.length === 0 ? (
+          <div className="empty">
+            <span className="pill">No pull requests {timeframeLabel(data.days)}. An empty field is still a nice field.</span>
+          </div>
+        ) : null}
+
+        {hovered && hover && hovered.id !== selected ? (
+          <HoverCard member={hovered} collar={collars.get(hovered.author)} avatar={avatars.get(hovered.author) ?? null} x={hover.x} y={hover.y} now={now} scope={settings.scope} />
+        ) : null}
+
+        {current ? (
+          <Inspector
+            member={current}
+            collar={collars.get(current.author)}
+            avatar={avatars.get(current.author) ?? null}
+            now={now}
+            scope={settings.scope}
+            mooing={mooing}
+            onMoo={() => void speak()}
+            onClose={() => setSelected(undefined)}
+          />
+        ) : null}
+
+        <div className="hint pill">hover a cow for its PR · click to lift · double-click to open · drag to look around · cows change pens as PRs advance</div>
+      </div>
+    </div>
+  )
+}
