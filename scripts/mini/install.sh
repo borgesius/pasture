@@ -14,6 +14,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PORT="${PASTURE_PORT:-3517}"
+# Chrome's debugging port for the kiosk, loopback only: scripts/mini/tv-shot.mjs screenshots the TV through it.
+TV_DEBUG_PORT="${PASTURE_TV_DEBUG_PORT:-9333}"
 ORG="${PASTURE_DEFAULT_ORG:-coval-ai}"
 AGENTS="$HOME/Library/LaunchAgents"
 LOGS="$HOME/Library/Logs"
@@ -27,11 +29,15 @@ mkdir -p "$AGENTS" "$LOGS"
 command -v gh >/dev/null || { echo "gh is not installed; the server uses its token" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "gh is not signed in; run: gh auth login" >&2; exit 1; }
 
-echo "building $ROOT"
-(cd "$ROOT" && npm ci --no-audit --no-fund && npm run build) >"$LOGS/pasture-build.log" 2>&1 || {
-  tail -20 "$LOGS/pasture-build.log" >&2
-  exit 1
-}
+if [ "${PASTURE_SKIP_BUILD:-0}" = "1" ] && [ -f "$ROOT/.next/BUILD_ID" ]; then
+  echo "using the existing build in $ROOT/.next"
+else
+  echo "building $ROOT"
+  (cd "$ROOT" && npm ci --no-audit --no-fund && npm run build) >"$LOGS/pasture-build.log" 2>&1 || {
+    tail -20 "$LOGS/pasture-build.log" >&2
+    exit 1
+  }
+fi
 
 cat >"$AGENTS/dev.bronson.pasture.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -83,6 +89,7 @@ cat >"$AGENTS/dev.bronson.pasture-tv.plist" <<PLIST
     <string>--disable-features=TranslateUI</string>
     <string>--autoplay-policy=no-user-gesture-required</string>
     <string>--window-position=0,0</string>
+    <string>--remote-debugging-port=$TV_DEBUG_PORT</string>
     <string>http://127.0.0.1:$PORT/pasture</string>
   </array>
   <key>RunAtLoad</key><true/>
