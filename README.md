@@ -25,6 +25,10 @@ Kobi the farmer walks the fences with a pitchfork, Moon and Bean at his heels. C
 tells you to get back to work. The rest of the office pets run laps around the pens having a nice
 time: Waffles, and the two black cats, Felix and Haru. Hover any of them for an introduction.
 
+When a Datadog monitor goes into alert, a wolf comes out of the trees and prowls the fence line
+until it clears. One wolf per firing alert (up to eight); hover one for the monitor's name, click
+it to open the monitor. Wolves only show on the home organization's field, to its members.
+
 <img src="docs/media/pasture.jpg" alt="the field: 125 merged cows out back, 55 open ones in the front pens" width="840" />
 
 ## Use it
@@ -70,6 +74,10 @@ and `on` brings it back; re-run the installer after a `git pull` to rebuild and 
    `PASTURE_DEFAULT_ORG` (people who are not in that organization start on their own instead).
 3. Deploy. Locally: `cp .env.example .env.local`, fill it in, `npm install`, `npm run dev`.
 
+Wolves need Datadog: `DD_API_KEY`, `DD_APP_KEY` (an application key with `monitors_read`) and
+`DD_SITE`. `DD_MONITOR_QUERY` narrows which monitors count (default `status:alert`). Leave them
+unset and there are no wolves.
+
 Without sign-in: set `GITHUB_TOKEN` and everyone who can reach the page sees that token's view of
 the default organization, so put something in front of it. `PASTURE_GH_CLI=1` asks the `gh` CLI
 for a token at request time instead (what the TV installer and local development use).
@@ -81,8 +89,10 @@ requested (or re-review requested, if the author pushed since) → checks failin
 comments → awaiting review → ready. Drafts, changes requested and ready get their own pens;
 everything else waits in "awaiting review".
 
-A cow whose PR just vanished from the open list waits in its pen for a few minutes so GitHub's
-merged search can catch up; that way a merge reads as a move to the back pen, not a disappearance.
+A pull request closed without merging is a cow that catches fire where it stands: it chars,
+collapses into the grass and leaves a scorch mark that fades. A cow whose PR just vanished from the
+open list waits in its pen for a few minutes so GitHub's merged search can catch up; that way a
+merge reads as a move to the back pen, not a disappearance.
 If a whole herd changes at once (you switched organizations or timeframes), the field just updates.
 The hand is for moments, not migrations.
 

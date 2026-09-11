@@ -2,7 +2,7 @@
  * Everyone on the field who is not a cow: the farmer, and the office pets
  * from #moon-bean-appreciation, who run laps around the pens having a nice time.
  */
-export type CritterKind = "dog" | "cat" | "farmer"
+export type CritterKind = "dog" | "cat" | "farmer" | "wolf"
 
 export type Critter = {
   id: string

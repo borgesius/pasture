@@ -93,6 +93,14 @@ describe("pasture members", () => {
     expect(limbo.size).toBe(0)
   })
 
+  test("a PR that shows up closed is never held for the merged search", () => {
+    const t0 = 1_000_000
+    const limbo = advanceLimbo(new Map(), [open(7), open(8)], [open(8)], new Set(), t0, new Set(["coval-ai/backend#7"]))
+    expect(limbo.size).toBe(0)
+    const held = advanceLimbo(new Map(), [open(7)], [], new Set(), t0)
+    expect(advanceLimbo(held, [], [], new Set(), t0 + 1000, new Set(["coval-ai/backend#7"])).size).toBe(0)
+  })
+
   test("people are counted across open and merged cows, most first", () => {
     const members = buildMembers([open(1, "draft", "dana"), open(2, "ready", "jake")], [merged(9, "dana"), merged(10, "dana")], new Map(), 150)
     expect([...personCounts(members)]).toEqual([

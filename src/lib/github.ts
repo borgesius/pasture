@@ -1,6 +1,6 @@
 import "server-only"
 import { derivePrState, type PrCheckState, type PrReviewState } from "@/lib/pr-state"
-import type { Herd, HerdRequest, MergedPullRequest, OpenPullRequest, Person, Scope, Viewer } from "@/lib/pasture/types"
+import type { ClosedPullRequest, Herd, HerdRequest, MergedPullRequest, OpenPullRequest, Person, Scope, Viewer } from "@/lib/pasture/types"
 
 const ENDPOINT = "https://api.github.com/graphql"
 const OPEN_PAGE = 50
@@ -123,6 +123,24 @@ query($q: String!, $cursor: String) {
     } }
   }
 }`
+
+const CLOSED_QUERY = `
+query($q: String!, $cursor: String) {
+  rateLimit { remaining }
+  search(query: $q, type: ISSUE, first: 100, after: $cursor) {
+    issueCount
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest {
+      number closedAt
+      repository { nameWithOwner isArchived }
+    } }
+  }
+}`
+
+type RawClosed = { number: number; closedAt: string; repository: { nameWithOwner: string; isArchived?: boolean | null } }
+
+const isRawClosed = (node: unknown): node is RawClosed =>
+  !!node && typeof node === "object" && "closedAt" in node && typeof (node as RawClosed).number === "number"
 
 type RawActor = { login?: string | null; avatarUrl?: string | null } | null
 
@@ -360,12 +378,15 @@ export async function fetchHerd(token: string, input: HerdRequest, now = Date.no
   const since = now - days * 86_400_000
   const where = scopeQualifier(input.scope)
   const slices = sliceCount(days)
-  const [open, merged] = await Promise.all([
+  const [open, merged, closed] = await Promise.all([
     input.openMode === "active"
       ? slicedSearch<RawOpen>(token, OPEN_QUERY, `is:pr is:open ${where} sort:updated-desc`, "updated", since, now, slices, 2, isRawOpen)
       : searchAll<RawOpen>(token, OPEN_QUERY, `is:pr is:open ${where} sort:updated-desc`, MAX_OPEN_PAGES, isRawOpen),
     slicedSearch<RawMerged>(token, MERGED_QUERY, `is:pr is:merged ${where} sort:updated-desc`, "merged", since, now, slices, 2, isRawMerged),
+    // Closed without merging: these cows burn. Rare enough for a single page.
+    searchAll<RawClosed>(token, CLOSED_QUERY, `is:pr is:closed is:unmerged ${where} closed:>=${stamp(since)} sort:updated-desc`, 1, isRawClosed),
   ])
+  const closedItems: ClosedPullRequest[] = closed.items.map((node) => ({ repo: node.repository.nameWithOwner, number: node.number, closedAt: node.closedAt }))
   const openItems = open.items.map(toOpen).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
   const mergedAll = merged.items.map(toMerged).sort((a, b) => Date.parse(b.mergedAt) - Date.parse(a.mergedAt))
   const mergedItems = mergedAll.slice(0, MAX_MERGED)
@@ -380,6 +401,7 @@ export async function fetchHerd(token: string, input: HerdRequest, now = Date.no
     fetchedAt: now,
     open: openItems,
     merged: mergedItems,
+    closed: closedItems,
     people: [...people.values()],
     truncatedOpen: open.truncated || undefined,
     truncatedMerged: merged.truncated || mergedAll.length > MAX_MERGED || undefined,

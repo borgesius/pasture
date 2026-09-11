@@ -211,6 +211,90 @@ function buildCat(spec: Critter): Parts {
   return { group, rig, head, legs, arms: [], tail, brows: [], top: bodyY + 0.9 }
 }
 
+/** A wolf: leaner and longer than any dog, long muzzle, pointed ears, yellow eyes, a bushy tail held low. */
+function buildWolf(spec: Critter): Parts {
+  const group = new THREE.Group()
+  const rig = new THREE.Group()
+  rig.scale.setScalar(spec.size)
+  group.add(rig)
+  const coat = mat(spec.body, 0.95)
+  const pale = mat(spec.patch ?? spec.body, 0.95)
+  const dark = mat("#141414", 0.6)
+
+  const legLength = 0.82
+  const bodyY = legLength + 0.36
+  const body = shadowed(new THREE.Mesh(new THREE.CapsuleGeometry(0.38, 1.35, 6, 14), coat))
+  body.rotation.x = Math.PI / 2
+  body.position.y = bodyY
+  rig.add(body)
+  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 1.0, 4, 10), pale)
+  belly.rotation.x = Math.PI / 2
+  belly.position.set(0, bodyY - 0.2, 0.05)
+  rig.add(belly)
+  const ruff = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 10), coat)
+  ruff.scale.set(1.05, 0.95, 0.8)
+  ruff.position.set(0, bodyY + 0.08, 0.62)
+  rig.add(ruff)
+
+  const head = new THREE.Group()
+  head.position.set(0, bodyY + 0.34, 1.0)
+  rig.add(head)
+  head.add(shadowed(new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 12), coat)))
+  const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2, 0.5), coat)
+  muzzle.position.set(0, -0.08, 0.42)
+  head.add(muzzle)
+  const chin = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.42), pale)
+  chin.position.set(0, -0.17, 0.38)
+  head.add(chin)
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), dark)
+  nose.position.set(0, -0.02, 0.68)
+  head.add(nose)
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat(spec.eyes, 0.3))
+    eye.position.set(side * 0.15, 0.1, 0.25)
+    head.add(eye)
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.028, 6, 5), dark)
+    pupil.position.set(side * 0.15, 0.1, 0.305)
+    head.add(pupil)
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.34, 5), coat)
+    ear.position.set(side * 0.18, 0.36, -0.06)
+    ear.rotation.z = side * -0.3
+    head.add(ear)
+  }
+
+  const legs: THREE.Group[] = []
+  for (const [x, z] of [
+    [-0.2, 0.5],
+    [0.2, 0.5],
+    [-0.2, -0.52],
+    [0.2, -0.52],
+  ]) {
+    const pivot = new THREE.Group()
+    pivot.position.set(x, legLength, z)
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.07, legLength, 8), coat)
+    leg.position.y = -legLength / 2
+    pivot.add(leg)
+    const paw = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), dark)
+    paw.position.set(0, -legLength + 0.04, 0.04)
+    pivot.add(paw)
+    rig.add(pivot)
+    legs.push(pivot)
+  }
+
+  const tail = new THREE.Group()
+  tail.position.set(0, bodyY + 0.12, -0.75)
+  const brush = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.55, 4, 8), coat)
+  brush.position.set(0, -0.28, -0.22)
+  brush.rotation.x = 0.7
+  tail.add(brush)
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), pale)
+  tip.position.set(0, -0.55, -0.42)
+  tail.add(tip)
+  rig.add(tail)
+
+  return { group, rig, head, legs, arms: [], tail, brows: [], top: bodyY + 0.95 }
+}
+
 /** Kobi: black hoodie, brown pants, black sneakers, and the straw hat that makes him the farmer. */
 function buildFarmer(spec: Critter): Parts {
   const group = new THREE.Group()
@@ -357,6 +441,8 @@ type Runner = {
 export type CritterField = {
   root: THREE.Group
   tick(dt: number, t: number, camera: THREE.Camera): void
+  /** The wolves on the field right now: one per spec, added and removed as the list changes. */
+  setWolves(specs: Critter[]): void
   /** Click: the farmer stops and tells you off (returns his line); a pet does a happy hop. */
   poke(id: string): string | undefined
   position(id: string): { x: number; y: number; z: number } | undefined
@@ -369,20 +455,22 @@ export function createCritters(scene: THREE.Scene): CritterField {
   const runners = new Map<string, Runner>()
   let lastLine = -1
 
-  CRITTERS.forEach((spec, index) => {
+  function addRunner(spec: Critter, index: number) {
     const rand = mulberry32(hashString(spec.id))
-    const parts = spec.kind === "dog" ? buildDog(spec) : spec.kind === "cat" ? buildCat(spec) : buildFarmer(spec)
+    const parts =
+      spec.kind === "dog" ? buildDog(spec) : spec.kind === "cat" ? buildCat(spec) : spec.kind === "wolf" ? buildWolf(spec) : buildFarmer(spec)
     parts.rig.traverse((object) => {
       object.userData.critterID = spec.id
     })
     root.add(parts.group)
+    const wolf = spec.kind === "wolf"
     const runner: Runner = {
       spec,
       parts,
-      s: (LANE.length / CRITTERS.length) * index + rand() * 8,
+      s: wrapLane((LANE.length / 6) * index + rand() * 8),
       dir: rand() < 0.5 ? 1 : -1,
-      offset: 0.6 + rand() * 1.4,
-      offsetTarget: 0.6 + rand() * 1.4,
+      offset: (wolf ? 1.8 : 0.6) + rand() * (wolf ? 1.6 : 1.4),
+      offsetTarget: 0,
       speed: spec.speed,
       cruise: spec.speed,
       mode: "go",
@@ -398,9 +486,31 @@ export function createCritters(scene: THREE.Scene): CritterField {
       z: 0,
       rand,
     }
+    runner.offsetTarget = runner.offset
     if (spec.kind === "farmer") runner.dir = 1
     runners.set(spec.id, runner)
-  })
+    place(runner, 0)
+    runner.heading = lanePoint(runner.s).heading + (runner.dir > 0 ? 0 : Math.PI)
+    parts.group.position.set(runner.x, 0, runner.z)
+    parts.group.rotation.y = runner.heading
+    return runner
+  }
+
+  function removeRunner(id: string) {
+    const runner = runners.get(id)
+    if (!runner) return
+    root.remove(runner.parts.group)
+    runner.parts.group.traverse((object) => {
+      const mesh = object as THREE.Mesh
+      if (mesh.geometry) mesh.geometry.dispose()
+      const material = mesh.material as THREE.Material | THREE.Material[] | undefined
+      if (!material) return
+      for (const item of Array.isArray(material) ? material : [material]) item.dispose()
+    })
+    runners.delete(id)
+  }
+
+  CRITTERS.forEach((spec, index) => addRunner(spec, index))
   // Followers start on their leader's heels, each a little further back.
   let trailing = 0
   for (const runner of runners.values()) {
@@ -428,7 +538,7 @@ export function createCritters(scene: THREE.Scene): CritterField {
     runner.timer -= dt
     runner.hop = Math.max(0, runner.hop - dt * 2.2)
     // Drift sideways a little so they do not all run the same line.
-    if (runner.rand() < dt * 0.3) runner.offsetTarget = 0.5 + runner.rand() * (spec.kind === "farmer" ? 1 : 2.2)
+    if (runner.rand() < dt * 0.3) runner.offsetTarget = spec.kind === "wolf" ? 1.6 + runner.rand() * 2 : 0.5 + runner.rand() * (spec.kind === "farmer" ? 1 : 2.2)
     runner.offset += (runner.offsetTarget - runner.offset) * Math.min(1, dt * 0.8)
 
     const leader = spec.follows ? runners.get(spec.follows) : undefined
@@ -534,6 +644,10 @@ export function createCritters(scene: THREE.Scene): CritterField {
         runner.heading = lerpAngle(runner.heading, face, dt * 5)
         parts.head.rotation.y = 0
         parts.head.rotation.x = -0.08
+      } else if (spec.kind === "wolf") {
+        // A howl: nose to the sky, held.
+        parts.head.rotation.x += (-0.85 - parts.head.rotation.x) * Math.min(1, dt * 4)
+        parts.head.rotation.y = 0
       } else {
         parts.head.rotation.x += (spec.kind === "cat" ? 0.15 : -0.1 - parts.head.rotation.x) * Math.min(1, dt * 3)
         parts.head.rotation.y = Math.sin(t * 0.7 + runner.phase) * 0.5
@@ -577,17 +691,19 @@ export function createCritters(scene: THREE.Scene): CritterField {
     parts.group.rotation.y = runner.heading
   }
 
-  for (const runner of runners.values()) {
-    place(runner, 0)
-    runner.heading = lanePoint(runner.s).heading + (runner.dir > 0 ? 0 : Math.PI)
-    runner.parts.group.position.set(runner.x, 0, runner.z)
-    runner.parts.group.rotation.y = runner.heading
-  }
-
   return {
     root,
     tick(dt, t, camera) {
       for (const runner of runners.values()) stepRunner(runner, dt, t, camera)
+    },
+    setWolves(specs) {
+      const wanted = new Map(specs.map((spec) => [spec.id, spec]))
+      for (const [id, runner] of runners) if (runner.spec.kind === "wolf" && !wanted.has(id)) removeRunner(id)
+      let index = 0
+      for (const spec of specs) {
+        if (!runners.has(spec.id)) addRunner(spec, index)
+        index++
+      }
     },
     poke(id) {
       const runner = runners.get(id)

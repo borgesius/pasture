@@ -23,16 +23,23 @@ export type Limbo = Map<string, Held>
  * Advance the limbo: open PRs that dropped out of `open` since `previous` are
  * held; anything that reappears, shows up merged, or times out is let go.
  */
-export function advanceLimbo(limbo: Limbo, previous: OpenPullRequest[], open: OpenPullRequest[], merged: Set<string>, now: number): Limbo {
+export function advanceLimbo(
+  limbo: Limbo,
+  previous: OpenPullRequest[],
+  open: OpenPullRequest[],
+  merged: Set<string>,
+  now: number,
+  closed: Set<string> = new Set(),
+): Limbo {
   const next: Limbo = new Map()
   const current = new Set(open.map(cowID))
   for (const [id, held] of limbo) {
-    if (current.has(id) || merged.has(id) || now - held.since > LIMBO_MS) continue
+    if (current.has(id) || merged.has(id) || closed.has(id) || now - held.since > LIMBO_MS) continue
     next.set(id, held)
   }
   for (const pr of previous) {
     const id = cowID(pr)
-    if (current.has(id) || merged.has(id) || next.has(id)) continue
+    if (current.has(id) || merged.has(id) || closed.has(id) || next.has(id)) continue
     next.set(id, { pr, since: now })
   }
   return next

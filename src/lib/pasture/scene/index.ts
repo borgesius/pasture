@@ -4,7 +4,9 @@ import { mulberry32 } from "@/lib/rng"
 import { penFor, type PenID } from "../pens"
 import { paintSign } from "./atlas"
 import { buildCow, disposeCow, gripHeight, headHeight, type CowParts, type CowSpec } from "./cow"
+import { wolfFor, type AlertSummary } from "../wolves"
 import { createCritters } from "./critters"
+import { BURN_SECONDS, createFire, createScorch, disposeFire, stepFire, stepScorch, type Fire, type Scorch } from "./fire"
 import { buildHand, curlHand } from "./hand"
 import { POND, buildScenery, inPond } from "./scenery"
 
@@ -31,6 +33,8 @@ export type PastureEvents = {
   onOpen(id: string): void
   /** The hand of god has just taken hold of a cow (a move, an arrival or a departure). */
   onCarry?(id: string): void
+  /** A cow has just caught fire (its pull request was closed). */
+  onBurn?(id: string): void
 }
 
 export type PastureScene = {
@@ -46,6 +50,10 @@ export type PastureScene = {
   poke(id: string): string | undefined
   /** Put the camera on a cow or a critter, `distance` away along the current view direction. */
   focus(id: string, distance?: number): boolean
+  /** One wolf per firing alert, prowling outside the fences; an empty list sends them away. */
+  setWolves(alerts: AlertSummary[]): void
+  /** The pull request was closed: the cow burns where it stands and is gone in a few seconds. */
+  burn(id: string): boolean
   dispose(): void
 }
 
@@ -93,6 +101,7 @@ type Cow = {
   hidden: boolean
   leaving: boolean
   dimmed: boolean
+  burning?: { t: number; fire: Fire }
   rand: () => number
 }
 
@@ -243,7 +252,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       const cowID = hit.object.userData.cowID as string | undefined
       if (cowID) {
         const cow = cows.get(cowID)
-        return cow && !cow.hidden ? { kind: "cow", id: cowID } : undefined
+        return cow && !cow.hidden && !cow.burning ? { kind: "cow", id: cowID } : undefined
       }
       const critterID = hit.object.userData.critterID as string | undefined
       if (critterID) return { kind: "critter", id: critterID }
@@ -305,6 +314,11 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   }
 
   function removeCow(cow: Cow) {
+    if (cow.burning) {
+      cow.parts.group.remove(cow.burning.fire.group)
+      disposeFire(cow.burning.fire)
+      cow.burning = undefined
+    }
     cowRoot.remove(cow.parts.group)
     disposeCow(cow.parts)
     cows.delete(cow.spec.id)
@@ -331,9 +345,49 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     return g
   }
 
+  const scorches: Scorch[] = []
+
+  function stepBurn(cow: Cow, dt: number, t: number) {
+    const burn = cow.burning!
+    const parts = cow.parts
+    const size = cow.spec.breed.size
+    burn.t += dt
+    const u = burn.t
+    const ignite = Math.min(1, u / 0.5)
+    const char = Math.min(1, Math.max(0, (u - 0.4) / 1.8))
+    const collapse = Math.min(1, Math.max(0, (u - 2.4) / 0.8))
+    const out = Math.min(1, Math.max(0, (u - 3.1) / 0.5))
+    const intensity = ignite * (1 - 0.6 * collapse) * (1 - out)
+    stepFire(burn.fire, t, dt, intensity, u > 0.7 && u < 3.3, size, cow.rand)
+    for (const material of parts.materials) {
+      material.color.setScalar(1 - 0.85 * char)
+      material.emissive.set("#ff6a00")
+      material.emissiveIntensity = 0.45 * intensity * (1 - 0.55 * char) * (0.7 + 0.3 * Math.sin(t * 17))
+    }
+    // Panic, then the legs go and the cow settles into the grass.
+    const shake = (1 - collapse) * ignite
+    parts.rig.position.x = Math.sin(t * 31) * 0.04 * shake
+    parts.rig.position.y = -collapse * 0.9 * size + Math.abs(Math.sin(t * 23)) * 0.05 * shake
+    parts.rig.scale.set(size * (1 + 0.15 * collapse), size * (1 - 0.65 * collapse), size)
+    parts.rig.rotation.z = collapse * 0.35
+    parts.legs.forEach((leg, index) => {
+      leg.rotation.x = Math.sin(t * 19 + index * 1.7) * 0.35 * shake + collapse * (index < 2 ? 1.1 : -1.1)
+    })
+    parts.head.rotation.x = -0.6 * shake + 0.8 * collapse
+    parts.tail.rotation.z = Math.sin(t * 25) * 0.6 * shake
+    parts.group.position.set(cow.x, 0, cow.z)
+    if (u >= BURN_SECONDS) {
+      const scorch = createScorch(cow.x, cow.z, size, t)
+      scene.add(scorch.mesh)
+      scorches.push(scorch)
+      removeCow(cow)
+    }
+  }
+
   function stepCow(cow: Cow, dt: number, t: number) {
     const parts = cow.parts
     if (cow.hidden) return
+    if (cow.burning) return stepBurn(cow, dt, t)
     const size = cow.spec.breed.size
     if (cow.carried) {
       // Position and height come from the hand; the cow just swings.
@@ -427,7 +481,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   }
 
   function separate() {
-    const list = [...cows.values()].filter((cow) => !cow.hidden && !cow.carried)
+    const list = [...cows.values()].filter((cow) => !cow.hidden && !cow.carried && !cow.burning)
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i]
@@ -463,7 +517,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     for (const cow of cows.values()) {
       if (i >= MAX_SHADOWS) break
       const size = cow.spec.breed.size
-      const shrink = cow.hidden ? 0 : cow.carried ? 0.55 : 1 - ease(cow.lift) * 0.35
+      const shrink = cow.hidden ? 0 : cow.carried ? 0.55 : cow.burning ? Math.max(0, 1 - cow.burning.t / BURN_SECONDS) : 1 - ease(cow.lift) * 0.35
       shadowPosition.set(cow.x, 0.02, cow.z)
       shadowScale.setScalar(0.95 * size * shrink)
       shadowMatrix.compose(shadowPosition, shadowRotation, shadowScale)
@@ -641,6 +695,13 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     for (const cow of cows.values()) stepCow(cow, dt, t)
     if (frame % 3 === 0 && cows.size > 1) separate()
     critters.tick(dt, t, camera)
+    for (const scorch of [...scorches]) {
+      if (stepScorch(scorch, t)) continue
+      scene.remove(scorch.mesh)
+      scorch.mesh.geometry.dispose()
+      ;(scorch.mesh.material as THREE.Material).dispose()
+      scorches.splice(scorches.indexOf(scorch), 1)
+    }
     placeShadows()
     scenery.tick(t)
     for (const cloud of scenery.clouds) {
@@ -679,6 +740,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       for (const spec of specs) {
         const cow = cows.get(spec.id)
         if (!cow) changes.push({ kind: "arrive", id: spec.id })
+        else if (cow.burning) continue
         else {
           cow.leaving = false
           cow.spec = spec
@@ -728,7 +790,22 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     },
     select(id) {
       selectedID = id
-      for (const cow of cows.values()) cow.selected = cow.spec.id === id && !cow.carried
+      for (const cow of cows.values()) cow.selected = cow.spec.id === id && !cow.carried && !cow.burning
+    },
+    burn(id) {
+      const cow = cows.get(id)
+      if (!cow || cow.hidden || cow.burning) return false
+      if (active?.cow === cow) finishActive()
+      cow.carried = false
+      cow.selected = false
+      cow.lift = 0
+      cow.leaving = true
+      cow.pendingPen = undefined
+      const fire = createFire(cow.spec.breed.size, gripHeight(cow.spec.breed.size) * 0.95, cow.rand)
+      cow.parts.group.add(fire.group)
+      cow.burning = { t: 0, fire }
+      events.onBurn?.(id)
+      return true
     },
     setFilter(authors) {
       filter = authors
@@ -751,6 +828,9 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     poke(id) {
       return critters.poke(id)
     },
+    setWolves(alerts) {
+      critters.setWolves(alerts.map(wolfFor))
+    },
     focus(id, distance = 14) {
       const cow = cows.get(id)
       const spot = cow ? { x: cow.x, y: cow.parts.rig.position.y + 0.9 * cow.spec.breed.size, z: cow.z } : critters.position(id)
@@ -772,6 +852,10 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       canvas.removeEventListener("dblclick", onDoubleClick)
       controls.dispose()
       critters.dispose()
+      for (const scorch of scorches) {
+        scorch.mesh.geometry.dispose()
+        ;(scorch.mesh.material as THREE.Material).dispose()
+      }
       for (const cow of cows.values()) disposeCow(cow.parts)
       cows.clear()
       scene.traverse((object) => {

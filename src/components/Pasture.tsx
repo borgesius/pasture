@@ -7,11 +7,12 @@ import { advanceLimbo, buildMembers, penCounts, personCounts, type Limbo } from 
 import { moo } from "@/lib/pasture/moo"
 import { createPastureScene, type CowSpec, type PastureScene, type PickTarget } from "@/lib/pasture/scene"
 import { PASTURE_TIMEFRAMES, cowID, type Herd, type OpenMode, type Viewer } from "@/lib/pasture/types"
+import { isWolf, wolfID, type AlertSummary } from "@/lib/pasture/wolves"
 import { HoverCard } from "./HoverCard"
 import { Inspector } from "./Inspector"
 import { WhosWho, type WhosWhoPerson } from "./WhosWho"
 import { ScopePicker } from "./ScopePicker"
-import { plural, timeframeLabel } from "./format"
+import { plural, relative, timeframeLabel } from "./format"
 
 /** Past this many the field turns into a stampede and the frame rate goes with it. */
 const HERD_CAP = 300
@@ -62,6 +63,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   const [hover, setHover] = useState<{ target: PickTarget; x: number; y: number }>()
   const [selected, setSelected] = useState<string>()
   const [bubble, setBubble] = useState<{ id: string; text: string; x: number; y: number }>()
+  const [alerts, setAlerts] = useState<{ home: string | null; count: number; alerts: AlertSummary[] }>({ home: null, count: 0, alerts: [] })
   const [focus, setFocus] = useState<string>()
   const [mooing, setMooing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -145,6 +147,28 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     [settings, key],
   )
 
+  // Firing alerts become wolves; the route answers quietly for any field but the home organization.
+  const loadAlerts = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/alerts?scope=${encodeURIComponent(settings.scope)}`, { cache: "no-store" })
+      if (!response.ok) return
+      const body = (await response.json()) as { home: string | null; count: number; alerts: AlertSummary[] }
+      setAlerts({ home: body.home, count: body.count, alerts: body.alerts ?? [] })
+    } catch {
+      // A missed poll just leaves last minute's wolves where they are.
+    }
+  }, [settings.scope])
+  useEffect(() => {
+    if (!ready) return
+    void loadAlerts()
+    const timer = setInterval(() => void loadAlerts(), REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [ready, loadAlerts])
+  const alertsById = useMemo(() => new Map(alerts.alerts.map((alert) => [wolfID(alert), alert])), [alerts])
+  const alertsRef = useRef(alertsById)
+  alertsRef.current = alertsById
+  useEffect(() => sceneRef.current?.setWolves(alerts.alerts), [alerts])
+
   useEffect(() => {
     if (!ready) return
     const controller = new AbortController()
@@ -175,7 +199,8 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     const before = previousOpenRef.current ?? herd.data.open
     previousOpenRef.current = herd.data.open
     const merged = new Set(herd.data.merged.map(cowID))
-    setLimbo((current) => advanceLimbo(current, before, herd.data.open, merged, at))
+    const closed = new Set(herd.data.closed.map(cowID))
+    setLimbo((current) => advanceLimbo(current, before, herd.data.open, merged, at, closed))
   }, [herd])
   useEffect(() => {
     if (!herd) return
@@ -184,6 +209,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   }, [now, herd])
 
   const data = herd?.key === key ? herd.data : undefined
+  const closedIds = useMemo(() => new Set((data?.closed ?? []).map(cowID)), [data])
   const members = useMemo(() => (data ? buildMembers(data.open, data.merged, limbo, HERD_CAP) : []), [data, limbo])
   const byId = useMemo(() => new Map(members.map((member) => [member.id, member])), [members])
   const byIdRef = useRef(byId)
@@ -211,7 +237,8 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   )
   const current = selected ? byId.get(selected) : undefined
   const hoveredCow = hover?.target.kind === "cow" ? byId.get(hover.target.id) : undefined
-  const hoveredCritter = hover?.target.kind === "critter" ? critterByID(hover.target.id) : undefined
+  const hoveredCritter = hover?.target.kind === "critter" && !isWolf(hover.target.id) ? critterByID(hover.target.id) : undefined
+  const hoveredWolf = hover?.target.kind === "critter" && isWolf(hover.target.id) ? alertsById.get(hover.target.id) : undefined
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -225,6 +252,11 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
       onSelect: (target) => {
         if (!target || target.kind === "cow") {
           setSelected(target?.id)
+          return
+        }
+        const alert = alertsRef.current.get(target.id)
+        if (alert) {
+          window.open(alert.url, "_blank", "noopener")
           return
         }
         const line = scene.poke(target.id)
@@ -242,6 +274,11 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
         const member = byIdRef.current.get(id)
         void moo(member?.breed.size ?? 1).catch(() => undefined)
       },
+      onBurn: (id) => {
+        if (!settingsRef.current.mooOnMove) return
+        const member = byIdRef.current.get(id)
+        void moo((member?.breed.size ?? 1) * 0.8).catch(() => undefined)
+      },
     })
     sceneRef.current = scene
     return () => {
@@ -256,13 +293,15 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     if (!scene || !data) return
     const animate = shownKeyRef.current === key
     shownKeyRef.current = key
+    // Closed pull requests burn where they stand; the hand of god is not called.
+    if (animate) for (const id of closedIds) scene.burn(id)
     scene.setCows(specs, animate)
     if (selected && !byId.has(selected)) setSelected(undefined)
     if (process.env.NODE_ENV !== "production") {
       // Dev harness: `__pasture.scene.setCows(specs, true)` from the console plays the hand of god.
       ;(window as unknown as { __pasture?: unknown }).__pasture = { scene, specs }
     }
-  }, [specs, data, key, byId, selected])
+  }, [specs, data, key, byId, selected, closedIds])
   useEffect(() => sceneRef.current?.select(selected), [selected])
   useEffect(() => {
     if (!bubble) return
@@ -410,6 +449,25 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
             </div>
             <div className="meta">{hoveredCritter.blurb}</div>
           </div>
+        ) : null}
+        {hoveredWolf && hover ? (
+          <div className="hovercard" style={{ left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }}>
+            <div className="title">🐺 {hoveredWolf.name}</div>
+            <div className="meta">
+              alert firing{hoveredWolf.since ? ` since ${relative(hoveredWolf.since, now)}` : ""} · click to open in Datadog
+            </div>
+          </div>
+        ) : null}
+        {alerts.count > 0 ? (
+          <a
+            className="pill wolves"
+            href={`https://app.${process.env.NEXT_PUBLIC_DD_SITE || "us5.datadoghq.com"}/monitors/manage?q=status%3Aalert`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Wolves on the field: Datadog monitors in alert. Click to see them all."
+          >
+            🐺 {plural(alerts.count, "alert")} firing
+          </a>
         ) : null}
         {bubble ? (
           <div className="bubble" style={{ left: `${bubble.x}px`, top: `${bubble.y}px` }} role="status">

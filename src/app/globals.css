@@ -300,6 +300,21 @@ img {
   border-color: rgba(192, 57, 43, 0.3);
 }
 
+.pill.wolves {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 5;
+  text-decoration: none;
+  font-weight: 700;
+  color: var(--ink);
+  border-color: rgba(43, 33, 24, 0.35);
+}
+
+.pill.wolves:hover {
+  background: #fff;
+}
+
 .notice {
   position: absolute;
   left: 14px;

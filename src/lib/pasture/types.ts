@@ -65,6 +65,9 @@ export type MergedPullRequest = {
   labels: string[]
 }
 
+/** A pull request closed without merging inside the window: its cow burns. */
+export type ClosedPullRequest = { repo: string; number: number; closedAt: string }
+
 export type PullRequest = OpenPullRequest | MergedPullRequest
 
 /** Whose pull requests: an organization, or the signed-in person across everything they touch. */
@@ -79,6 +82,7 @@ export type Herd = {
   fetchedAt: number
   open: OpenPullRequest[]
   merged: MergedPullRequest[]
+  closed: ClosedPullRequest[]
   people: Person[]
   /** More matched than were fetched; the field shows the newest. */
   truncatedOpen?: boolean
