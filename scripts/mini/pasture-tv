@@ -1,0 +1,15 @@
+#!/bin/bash
+# Show or hide the kiosk window on this Mac: pasture-tv on | off | status
+set -euo pipefail
+LABEL="dev.bronson.pasture-tv"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+UID_NUM="$(id -u)"
+case "${1:-status}" in
+  on) launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true; launchctl bootstrap "gui/$UID_NUM" "$PLIST"; echo "tv on" ;;
+  off) launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true; echo "tv off" ;;
+  status)
+    launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1 && echo "tv: on" || echo "tv: off"
+    launchctl print "gui/$UID_NUM/dev.bronson.pasture" >/dev/null 2>&1 && echo "server: on" || echo "server: off"
+    ;;
+  *) echo "usage: pasture-tv on|off|status" >&2; exit 2 ;;
+esac

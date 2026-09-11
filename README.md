@@ -64,3 +64,10 @@ npm run build       # production build
 Everything on the field is built from three.js primitives and canvas textures. There are no model
 files. A cow is seven meshes sharing one texture atlas per breed, so a few hundred of them fit in
 a frame.
+
+## On a TV
+
+`scripts/mini/install.sh` sets a Mac up as an always-on display: a launchd agent runs the
+production server on `127.0.0.1:3517` in gh-CLI token mode (no sign-in, never logs out), and a
+second agent keeps a kiosk Chrome window on the field. `scripts/mini/pasture-tv off` hides the
+window; re-run the installer after a `git pull` to rebuild and restart.
