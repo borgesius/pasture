@@ -10,6 +10,7 @@ describe("pasture breeds", () => {
       if (breed.pattern !== "solid") expect(breed.patch).toMatch(/^#[0-9a-f]{6}$/i)
     }
     expect(new Set(BREEDS.map((b) => b.id)).size).toBe(BREEDS.length)
+    expect(BREEDS.filter((b) => b.pattern === "nguni").length).toBeGreaterThanOrEqual(2)
   })
 
   test("a PR is always the same cow, and a herd spreads across many breeds", () => {

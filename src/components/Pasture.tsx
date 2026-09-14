@@ -281,6 +281,9 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
       },
     })
     sceneRef.current = scene
+    // `?ufo=N` sets how often the saucer does the carrying (1 = always); for demos and TVs.
+    const ufo = Number(new URLSearchParams(window.location.search).get("ufo"))
+    if (Number.isFinite(ufo) && ufo > 0) scene.setUfoOdds(ufo)
     return () => {
       scene.dispose()
       sceneRef.current = undefined

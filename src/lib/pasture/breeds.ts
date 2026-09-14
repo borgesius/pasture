@@ -1,7 +1,7 @@
 import { hashString } from "@/lib/rng"
 import type { PullRequest } from "./types"
 
-export type BreedPattern = "solid" | "patches" | "belt" | "whiteface" | "roan" | "backstripe"
+export type BreedPattern = "solid" | "patches" | "belt" | "whiteface" | "roan" | "backstripe" | "nguni"
 
 /** short: stubby and curved. long: a sweep out and up. huge: the lateral Texas span. lyre: the tall, thick Watusi pair. */
 export type HornStyle = "none" | "short" | "long" | "huge" | "lyre"
@@ -55,6 +55,8 @@ export const BREEDS: Breed[] = [
   { id: "murray-grey", name: "Murray Grey", body: "#9a9aa0", pattern: "solid", horns: "none", ears: "up", size: 1, muzzle: "#3a3a40" },
   { id: "white-park", name: "White Park", body: "#f6f4ef", patch: "#1a1a1a", pattern: "solid", horns: "long", ears: "up", size: 1.05, muzzle: "#1a1a1a" },
   { id: "speckle-park", name: "Speckle Park", body: "#f4f1ec", patch: "#1e1e1e", pattern: "roan", horns: "none", ears: "up", size: 1, muzzle: "#2a2a2a" },
+  { id: "nguni", name: "Nguni", body: "#f4efe4", patch: "#3a2a22", pattern: "nguni", horns: "long", ears: "up", size: 0.95, muzzle: "#3a2a22" },
+  { id: "nguni-red", name: "Nguni", body: "#efe6d6", patch: "#8e4a2c", pattern: "nguni", horns: "long", ears: "up", size: 0.95, muzzle: "#5a3a2a" },
   { id: "fleckvieh", name: "Fleckvieh", body: "#f6efe4", patch: "#c96a3f", pattern: "patches", horns: "none", ears: "up", size: 1.1, muzzle: "#e4bcac", dairy: true },
 ]
 

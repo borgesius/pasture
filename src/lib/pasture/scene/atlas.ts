@@ -121,6 +121,33 @@ function paintCoat(ctx: CanvasRenderingContext2D, breed: Breed, rand: () => numb
       })
     }
     ctx.globalAlpha = 1
+  } else if (breed.pattern === "nguni") {
+    // Nguni hides: a handful of large irregular patches, then a shower of spots
+    // and specks that gets denser toward the patches, like ink bleeding through.
+    const count = 3 + Math.floor(rand() * 3)
+    const centres: Array<[number, number]> = []
+    for (let i = 0; i < count; i++) {
+      const cx = rand() * W
+      const cy = rand() * H
+      centres.push([cx, cy])
+      const shape = blobShape(rand, cx, cy, 70 + rand() * 90)
+      wrapped((dx) => drawShape(ctx, patch, shape, dx))
+    }
+    for (let i = 0; i < 900; i++) {
+      const [cx, cy] = centres[Math.floor(rand() * centres.length)]
+      const near = rand() < 0.65
+      const x = near ? cx + (rand() - 0.5) * 220 : rand() * W
+      const y = near ? cy + (rand() - 0.5) * 140 : rand() * H
+      const r = 1.5 + rand() * (near ? 9 : 4)
+      ctx.globalAlpha = 0.7 + rand() * 0.3
+      ctx.fillStyle = patch
+      wrapped((dx) => {
+        ctx.beginPath()
+        ctx.ellipse(x + dx, y, r, r * (0.6 + rand() * 0.6), rand() * Math.PI, 0, TAU)
+        ctx.fill()
+      })
+    }
+    ctx.globalAlpha = 1
   } else if (breed.pattern === "whiteface") {
     // A white belly to go with the white face.
     for (const [x, w] of [

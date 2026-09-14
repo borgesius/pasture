@@ -198,7 +198,7 @@ function horn(style: Exclude<HornStyle, "none">, side: 1 | -1) {
 
 function headParts(breed: Breed, offset: number): THREE.BufferGeometry[] {
   const parts: THREE.BufferGeometry[] = []
-  const patterned = breed.pattern === "patches" || breed.pattern === "roan" || breed.pattern === "solid"
+  const patterned = breed.pattern === "patches" || breed.pattern === "roan" || breed.pattern === "solid" || breed.pattern === "nguni"
   const faceOf = (geometry: THREE.BufferGeometry) =>
     breed.pattern === "whiteface" ? toSwatch(geometry, SWATCH.face) : patterned ? toCoat(geometry, offset + 0.37, 0.5, 0.25) : toSwatch(geometry, SWATCH.body)
 

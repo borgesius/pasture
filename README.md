@@ -14,7 +14,8 @@ A green field with five fenced pens: **drafts**, **awaiting review**, **changes 
 **ready to merge** across the front, and the **merged** herd out back by the pond. Every pull
 request anyone on your team touched in the last 24 hours is a cow in the pen for its stage. When a
 PR moves on, the hand of god comes down, picks the cow up and carries it to its new pen. A brand-new
-PR is lowered in from the sky. A closed one is taken away.
+PR is lowered in from the sky. A closed one is taken away. One time in ten a flying saucer turns up
+instead and does the job with a tractor beam.
 
 Everyone on the team wears a different coloured cowbell collar, and the who's who menu says which
 colour is whose. Hover a cow for its PR. Click it to lift it up, legs dangling, and read what is
@@ -100,7 +101,7 @@ The hand is for moments, not migrations.
 
 Next.js on Vercel, Auth.js for the GitHub sign-in, GitHub's GraphQL search for the herd, three.js
 for the field. Everything on the field is built from primitives and canvas textures; there are no
-model files. A cow is seven meshes sharing one texture atlas per breed (thirty breeds, coats
+model files. A cow is seven meshes sharing one texture atlas per breed (thirty-two breeds, Nguni included, coats
 painted on the fly, a PR is always the same cow), so a few hundred fit in a frame.
 
 ```bash

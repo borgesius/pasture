@@ -8,6 +8,7 @@ import { wolfFor, type AlertSummary } from "../wolves"
 import { createCritters } from "./critters"
 import { BURN_SECONDS, createFire, createScorch, disposeFire, stepFire, stepScorch, type Fire, type Scorch } from "./fire"
 import { buildHand, curlHand } from "./hand"
+import { buildUfo, stepUfo, UFO_HOVER } from "./ufo"
 import { POND, buildScenery, inPond } from "./scenery"
 
 export type { CowSpec } from "./cow"
@@ -54,6 +55,8 @@ export type PastureScene = {
   setWolves(alerts: AlertSummary[]): void
   /** The pull request was closed: the cow burns where it stands and is gone in a few seconds. */
   burn(id: string): boolean
+  /** How often the saucer does the carrying: one transfer in `odds` (1 = every time, 0 = never). */
+  setUfoOdds(odds: number): void
   dispose(): void
 }
 
@@ -61,6 +64,8 @@ const TAU = Math.PI * 2
 const SKY_Y = 34
 const CARRY_Y = 11
 const MAX_ANIMATED_CHANGES = 8
+/** One transfer in this many is done by the saucer instead of the hand. */
+const UFO_ODDS = 10
 const MAX_SHADOWS = 400
 
 const ease = (u: number) => u * u * (3 - 2 * u)
@@ -112,6 +117,8 @@ type Phase = "descend" | "grab" | "lift" | "travel" | "lower" | "release" | "asc
 type Active = {
   transfer: Transfer
   phase: Phase
+  /** Who is doing the carrying. */
+  vehicle: "hand" | "ufo"
   t: number
   from: { x: number; z: number }
   to: { x: number; z: number }
@@ -131,6 +138,13 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   const scenery = buildScenery(scene)
   const hand = buildHand()
   scene.add(hand.group)
+  const ufo = buildUfo()
+  scene.add(ufo.group)
+  let transfers = 0
+  let ufoOdds = UFO_ODDS
+  /** Every ufoOdds-th transfer, on a fixed per-session offset so a fresh page does not always open with a saucer. */
+  const ufoOffset = Math.floor(Math.random() * UFO_ODDS)
+  const nextVehicle = (): Active["vehicle"] => (ufoOdds > 0 && transfers++ % ufoOdds === ufoOffset % ufoOdds ? "ufo" : "hand")
   const critters = createCritters(scene)
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500)
@@ -547,18 +561,29 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     "carry-down": 1.4,
   }
 
+  /** The carrier's position: the hand grips at (x, y, z); the saucer hovers UFO_HOVER above it with the beam down. */
+  const carrier = () => (active?.vehicle === "ufo" ? ufo.group : hand.group)
   function placeHand(x: number, y: number, z: number) {
-    hand.group.position.set(x, y, z)
+    if (active?.vehicle === "ufo") ufo.group.position.set(x, y + UFO_HOVER, z)
+    else hand.group.position.set(x, y, z)
+  }
+  /** Where the hand would be gripping (the saucer's beam target), whichever vehicle is out. */
+  const gripPoint = () => {
+    const p = carrier().position
+    return { x: p.x, y: active?.vehicle === "ufo" ? p.y - UFO_HOVER : p.y, z: p.z }
   }
 
   function holdCow(cow: Cow) {
     cow.carried = true
     cow.selected = false
     cow.lift = 0
-    cow.x = hand.group.position.x
-    cow.z = hand.group.position.z
-    cow.parts.rig.position.y = Math.max(0, hand.group.position.y - gripHeight(cow.spec.breed.size))
+    const grip = gripPoint()
+    cow.x = grip.x
+    cow.z = grip.z
+    cow.parts.rig.position.y = Math.max(0, grip.y - gripHeight(cow.spec.breed.size))
+    if (active?.vehicle === "ufo") cow.heading += 0.9 * lastDt
   }
+  let lastDt = 0
 
   function startNext() {
     while (!active && queue.length) {
@@ -568,12 +593,12 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       if (transfer.kind === "move") {
         if (cow.pendingPen !== transfer.to) continue
         const to = randomPointIn(transfer.to, cow.rand)
-        active = { transfer, phase: "descend", t: 0, from: { x: cow.x, z: cow.z }, to, cow }
+        active = { transfer, phase: "descend", vehicle: nextVehicle(), t: 0, from: { x: cow.x, z: cow.z }, to, cow }
         placeHand(cow.x, SKY_Y, cow.z)
         curlHand(hand, 0)
       } else if (transfer.kind === "arrive") {
         const to = { x: cow.x, z: cow.z }
-        active = { transfer, phase: "carry-down", t: 0, from: to, to, cow }
+        active = { transfer, phase: "carry-down", vehicle: nextVehicle(), t: 0, from: to, to, cow }
         placeHand(to.x, SKY_Y, to.z)
         curlHand(hand, 1)
         cow.hidden = false
@@ -582,22 +607,25 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
         events.onCarry?.(cow.spec.id)
       } else {
         if (!cow.leaving) continue
-        active = { transfer, phase: "descend", t: 0, from: { x: cow.x, z: cow.z }, to: { x: cow.x, z: cow.z }, cow }
+        active = { transfer, phase: "descend", vehicle: nextVehicle(), t: 0, from: { x: cow.x, z: cow.z }, to: { x: cow.x, z: cow.z }, cow }
         placeHand(cow.x, SKY_Y, cow.z)
         curlHand(hand, 0)
       }
-      hand.group.visible = true
+      hand.group.visible = active.vehicle === "hand"
+      ufo.group.visible = active.vehicle === "ufo"
     }
   }
 
   function finishActive() {
     hand.group.visible = false
+    ufo.group.visible = false
     active = undefined
     startNext()
   }
 
-  function stepHand(dt: number) {
+  function stepHand(dt: number, t: number) {
     if (!active) return
+    lastDt = dt
     const a = active
     const cow = a.cow
     const size = cow.spec.breed.size
@@ -605,6 +633,11 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     a.t += dt
     const u = Math.min(1, a.t / DURATION[a.phase])
     const e = ease(u)
+    if (a.vehicle === "ufo") {
+      // The beam reaches the ground while the saucer is low, and holds the cow while carried.
+      const strength = a.phase === "grab" ? e : a.phase === "release" ? 1 - e : a.phase === "descend" || a.phase === "ascend" || a.phase === "carry-down" || a.phase === "carry-up" ? 0.35 : 1
+      stepUfo(ufo, t, ufo.group.position.y - 0.7, strength)
+    }
     switch (a.phase) {
       case "descend":
         placeHand(a.from.x, SKY_Y + (top - SKY_Y) * e, a.from.z)
@@ -645,9 +678,11 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
           cow.target = pickTarget(cow)
         }
         break
-      case "ascend":
-        placeHand(hand.group.position.x, top + (SKY_Y - top) * e, hand.group.position.z)
+      case "ascend": {
+        const at = gripPoint()
+        placeHand(at.x, top + (SKY_Y - top) * e, at.z)
         break
+      }
       case "carry-up":
         placeHand(a.from.x, top + (SKY_Y + 6 - top) * e, a.from.z)
         if (u >= 1) {
@@ -691,7 +726,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     const dt = Math.min(0.05, clock.getDelta())
     const t = clock.elapsedTime
     frame++
-    stepHand(dt)
+    stepHand(dt, t)
     for (const cow of cows.values()) stepCow(cow, dt, t)
     if (frame % 3 === 0 && cows.size > 1) separate()
     critters.tick(dt, t, camera)
@@ -830,6 +865,9 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     },
     setWolves(alerts) {
       critters.setWolves(alerts.map(wolfFor))
+    },
+    setUfoOdds(odds) {
+      ufoOdds = Math.max(0, Math.floor(odds))
     },
     focus(id, distance = 14) {
       const cow = cows.get(id)
