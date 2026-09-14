@@ -8,6 +8,7 @@ import { moo } from "@/lib/pasture/moo"
 import { createPastureScene, type CowSpec, type PastureScene, type PickTarget } from "@/lib/pasture/scene"
 import { PASTURE_TIMEFRAMES, cowID, type Herd, type OpenMode, type Viewer } from "@/lib/pasture/types"
 import { isWolf, wolfID, type AlertSummary } from "@/lib/pasture/wolves"
+import { SAN_FRANCISCO, describeWeather, localClock, sunPosition, type Weather } from "@/lib/sky"
 import { HoverCard } from "./HoverCard"
 import { Inspector } from "./Inspector"
 import { WhosWho, type WhosWhoPerson } from "./WhosWho"
@@ -64,6 +65,9 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   const [selected, setSelected] = useState<string>()
   const [bubble, setBubble] = useState<{ id: string; text: string; x: number; y: number }>()
   const [alerts, setAlerts] = useState<{ home: string | null; count: number; alerts: AlertSummary[] }>({ home: null, count: 0, alerts: [] })
+  const [weather, setWeather] = useState<Weather | null>(null)
+  // `?sky=off` freezes the field at a nice afternoon, for screenshots and films.
+  const [liveSky] = useState(() => (typeof window === "undefined" ? true : new URLSearchParams(window.location.search).get("sky") !== "off"))
   const [focus, setFocus] = useState<string>()
   const [mooing, setMooing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -168,6 +172,30 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   const alertsRef = useRef(alertsById)
   alertsRef.current = alertsById
   useEffect(() => sceneRef.current?.setWolves(alerts.alerts), [alerts])
+
+  // The sky over the field is San Francisco's: the sun where it really is, the weather as it is.
+  useEffect(() => {
+    if (!liveSky) return
+    let cancelled = false
+    const poll = () =>
+      fetch("/api/weather", { cache: "no-store" })
+        .then(async (response) => (response.ok ? ((await response.json()) as Weather) : null))
+        .then((w) => {
+          if (!cancelled && w && !("error" in w)) setWeather(w)
+        })
+        .catch(() => undefined)
+    void poll()
+    const timer = setInterval(poll, 10 * 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [liveSky])
+  useEffect(() => {
+    if (!liveSky) return
+    const sun = sunPosition(new Date(now))
+    sceneRef.current?.setSky({ altitude: sun.altitude, azimuth: sun.azimuth, weather })
+  }, [now, weather, liveSky])
 
   useEffect(() => {
     if (!ready) return
@@ -281,6 +309,10 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
       },
     })
     sceneRef.current = scene
+    if (liveSky) {
+      const sun = sunPosition(new Date())
+      scene.setSky({ altitude: sun.altitude, azimuth: sun.azimuth, weather: null })
+    }
     // `?ufo=N` sets how often the saucer does the carrying (1 = always); for demos and TVs.
     const ufo = Number(new URLSearchParams(window.location.search).get("ufo"))
     if (Number.isFinite(ufo) && ufo > 0) scene.setUfoOdds(ufo)
@@ -288,7 +320,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
       scene.dispose()
       sceneRef.current = undefined
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switching org or timeframe swaps the whole herd; that is a new field, not a migration.
   useEffect(() => {
@@ -492,6 +524,12 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
         ) : null}
 
         <div className="hint pill">hover a cow for its PR · click to lift · double-click to open · drag to look around · cows change pens as PRs advance</div>
+        {liveSky ? (
+          <div className="pill sky" title="The sky over the field is San Francisco's, sun and weather included">
+            {SAN_FRANCISCO.name} · {localClock(new Date(now))}
+            {weather ? ` · ${describeWeather(weather.code)}${weather.temperatureF !== null ? ` ${Math.round(weather.temperatureF)}°F` : ""}` : ""}
+          </div>
+        ) : null}
       </div>
     </div>
   )

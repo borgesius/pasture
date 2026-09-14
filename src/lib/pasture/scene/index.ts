@@ -10,6 +10,7 @@ import { BURN_SECONDS, createFire, createScorch, disposeFire, stepFire, stepScor
 import { buildHand, curlHand } from "./hand"
 import { buildUfo, stepUfo, UFO_HOVER } from "./ufo"
 import { POND, buildScenery, inPond } from "./scenery"
+import type { SkyState } from "./weather"
 
 export type { CowSpec } from "./cow"
 
@@ -57,6 +58,8 @@ export type PastureScene = {
   burn(id: string): boolean
   /** How often the saucer does the carrying: one transfer in `odds` (1 = every time, 0 = never). */
   setUfoOdds(odds: number): void
+  /** The real sky: where the sun is and what the weather is doing. */
+  setSky(state: SkyState): void
   dispose(): void
 }
 
@@ -738,7 +741,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       scorches.splice(scorches.indexOf(scorch), 1)
     }
     placeShadows()
-    scenery.tick(t)
+    scenery.tick(t, dt)
     for (const cloud of scenery.clouds) {
       cloud.position.x += (cloud.userData.speed as number) * dt
       if (cloud.position.x > 120) cloud.position.x = -120
@@ -869,6 +872,9 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     setUfoOdds(odds) {
       ufoOdds = Math.max(0, Math.floor(odds))
     },
+    setSky(state) {
+      scenery.sky.set(state)
+    },
     focus(id, distance = 14) {
       const cow = cows.get(id)
       const spot = cow ? { x: cow.x, y: cow.parts.rig.position.y + 0.9 * cow.spec.breed.size, z: cow.z } : critters.position(id)
@@ -890,6 +896,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       canvas.removeEventListener("dblclick", onDoubleClick)
       controls.dispose()
       critters.dispose()
+      scenery.sky.dispose()
       for (const scorch of scorches) {
         scorch.mesh.geometry.dispose()
         ;(scorch.mesh.material as THREE.Material).dispose()

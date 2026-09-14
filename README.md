@@ -26,6 +26,11 @@ Kobi the farmer walks the fences with a pitchfork, Moon and Bean at his heels. C
 tells you to get back to work. The rest of the office pets run laps around the pens having a nice
 time: Waffles, and the two black cats, Felix and Haru. Hover any of them for an introduction.
 
+The sky over the field is San Francisco's. The sun sits where it really is (the light and the
+shadows follow it), the colours run night to golden hour to day, stars and a moon come out, clouds
+thicken with the cloud cover, and it rains on the field when it rains in the city. `?sky=off`
+freezes a nice afternoon for screenshots.
+
 When a Datadog monitor goes into alert, a wolf comes out of the trees and prowls the fence line
 until it clears. One wolf per firing alert (up to eight); hover one for the monitor's name, click
 it to open the monitor. Wolves only show on the home organization's field, to its members.

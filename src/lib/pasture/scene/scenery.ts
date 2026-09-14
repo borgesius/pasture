@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { mulberry32 } from "@/lib/rng"
 import { PENS, type PenID } from "../pens"
 import { groundTexture, paintSign, type Sign } from "./atlas"
+import { createSkyRig, type SkyRig } from "./weather"
 
 const TAU = Math.PI * 2
 
@@ -16,8 +17,10 @@ export function inPond(x: number, z: number, margin = 1.5) {
 export type Scenery = {
   signs: Map<PenID, Sign>
   clouds: THREE.Group[]
+  /** The sky, driven by the real sun and weather. */
+  sky: SkyRig
   /** Advance the wind. */
-  tick(t: number): void
+  tick(t: number, dt: number): void
 }
 
 function buildGround(scene: THREE.Scene) {
@@ -282,7 +285,7 @@ function buildClouds(scene: THREE.Scene) {
   const material = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 1, emissive: "#ffffff", emissiveIntensity: 0.3 })
   const rand = mulberry32(53)
   const clouds: THREE.Group[] = []
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 14; i++) {
     const cloud = new THREE.Group()
     const puffs = 4 + Math.floor(rand() * 4)
     for (let p = 0; p < puffs; p++) {
@@ -297,16 +300,20 @@ function buildClouds(scene: THREE.Scene) {
     scene.add(cloud)
     clouds.push(cloud)
   }
-  return clouds
+  return { clouds, material }
 }
 
 function buildSky(scene: THREE.Scene) {
   scene.background = new THREE.Color("#a9d8f5")
   scene.fog = new THREE.Fog("#bfe0f5", 130, 280)
-  const sun = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 20), new THREE.MeshBasicMaterial({ color: "#fff1a8" }))
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 20), new THREE.MeshBasicMaterial({ color: "#fff1a8", fog: false }))
   sun.position.set(90, 80, -120)
   scene.add(sun)
-  scene.add(new THREE.HemisphereLight("#cfe9ff", "#4f8a3a", 0.95))
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(5, 20, 20), new THREE.MeshBasicMaterial({ color: "#e8ecf5", fog: false }))
+  moon.visible = false
+  scene.add(moon)
+  const hemisphere = new THREE.HemisphereLight("#cfe9ff", "#4f8a3a", 0.95)
+  scene.add(hemisphere)
   const light = new THREE.DirectionalLight("#fff4dc", 2.2)
   light.position.set(40, 60, 30)
   light.castShadow = true
@@ -320,7 +327,9 @@ function buildSky(scene: THREE.Scene) {
   light.shadow.bias = -0.0008
   light.shadow.normalBias = 0.02
   scene.add(light)
-  scene.add(new THREE.AmbientLight("#ffffff", 0.22))
+  const ambient = new THREE.AmbientLight("#ffffff", 0.22)
+  scene.add(ambient)
+  return { sun, moon, light, hemisphere, ambient }
 }
 
 /** A red barn out back, with a hayloft window and a few bales beside it. */
@@ -402,7 +411,7 @@ function buildBarn(scene: THREE.Scene) {
 
 export function buildScenery(scene: THREE.Scene): Scenery {
   const uniforms = { uTime: { value: 0 } }
-  buildSky(scene)
+  const skyParts = buildSky(scene)
   buildGround(scene)
   buildGrass(scene, uniforms)
   buildFlowers(scene)
@@ -412,12 +421,34 @@ export function buildScenery(scene: THREE.Scene): Scenery {
   buildFences(scene)
   buildBarn(scene)
   const signs = buildSigns(scene)
-  const clouds = buildClouds(scene)
+  const { clouds, material: cloudMaterial } = buildClouds(scene)
+  const stars = buildStarsAt(scene)
+  const sky = createSkyRig({ scene, ...skyParts, stars, clouds, cloudMaterial })
   return {
     signs,
     clouds,
-    tick(t) {
+    sky,
+    tick(t, dt) {
       uniforms.uTime.value = t
+      sky.tick(t, dt)
     },
   }
+}
+
+function buildStarsAt(scene: THREE.Scene) {
+  const rand = mulberry32(97)
+  const count = 900
+  const positions = new Float32Array(count * 3)
+  for (let i = 0; i < count; i++) {
+    const alt = ((5 + rand() * 80) * Math.PI) / 180
+    const az = rand() * TAU
+    positions.set([Math.sin(az) * Math.cos(alt) * 320, Math.sin(alt) * 320, -Math.cos(az) * Math.cos(alt) * 320], i * 3)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3))
+  const material = new THREE.PointsMaterial({ color: "#ffffff", size: 1.6, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, fog: false })
+  const stars = new THREE.Points(geometry, material)
+  stars.frustumCulled = false
+  scene.add(stars)
+  return stars
 }
