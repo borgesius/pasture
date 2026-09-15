@@ -39,6 +39,14 @@ Golden Gate Bridge; this is a farm, after all, so they are a long way off.
 A cow in the merge queue hovers and turns slowly until its turn comes. John Pork lives in the
 barn loft and shows his face at the window now and again.
 
+An optional [release integration](docs/release-integrations.md) can replace the merged-history
+herd with what is actually waiting to be released. The large back pasture becomes **waiting for
+release**, a small paddock appears off to the side for **recently released** work, and an active
+release changes the weather while a mothership gathers over the field. Pasture consumes a small,
+provider-neutral JSON feed; it does not need to know the CI system, branch layout or deployment
+vendor behind it. With no feed configured, the original merged-within-the-timeframe field is
+unchanged.
+
 When a Datadog monitor goes into alert, a wolf comes out of the trees and prowls the fence line
 until it clears. One wolf per firing alert (up to eight); hover one for the monitor's name, click
 it to open the monitor. When an alert clears, Moon or Bean chases the wolf off. Wolves only show on the home organization's field, to its members.
@@ -91,6 +99,11 @@ and `on` brings it back; re-run the installer after a `git pull` to rebuild and 
 Wolves need Datadog: `DD_API_KEY`, `DD_APP_KEY` (an application key with `monitors_read`) and
 `DD_SITE`. `DD_MONITOR_QUERY` narrows which monitors count (default `status:alert`). Leave them
 unset and there are no wolves.
+
+Release weather and the release paddock need `PASTURE_RELEASE_FEED_URL`. Add
+`PASTURE_RELEASE_FEED_TOKEN` if the feed accepts bearer authentication, and optionally use the
+comma-separated `PASTURE_RELEASE_SCOPES` when it belongs to more than the default organization.
+See [release integrations](docs/release-integrations.md) for the contract and an example adapter.
 
 Without sign-in: set `GITHUB_TOKEN` and everyone who can reach the page sees that token's view of
 the default organization, so put something in front of it. `PASTURE_GH_CLI=1` asks the `gh` CLI

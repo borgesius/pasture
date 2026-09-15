@@ -5,12 +5,14 @@ import { penFor, type PenID } from "../pens"
 import { paintSign } from "./atlas"
 import { buildCow, disposeCow, gripHeight, headHeight, type CowParts, type CowSpec } from "./cow"
 import { wolfFor, type AlertSummary } from "../wolves"
+import type { ReleasePhase } from "../releases"
 import { createCritters } from "./critters"
 import { BURN_SECONDS, createFire, createScorch, disposeFire, stepFire, stepScorch, type Fire, type Scorch } from "./fire"
 import { buildHand, curlHand } from "./hand"
 import { buildUfo, stepUfo, UFO_HOVER } from "./ufo"
 import { POND, buildScenery, inPond } from "./scenery"
 import { createTour } from "./tour"
+import { createReleaseRig } from "./release"
 import type { SkyState } from "./weather"
 
 export type { CowSpec } from "./cow"
@@ -61,6 +63,10 @@ export type PastureScene = {
   setUfoOdds(odds: number): void
   /** The real sky: where the sun is and what the weather is doing. */
   setSky(state: SkyState): void
+  /** Reveal the optional recently-released paddock and frame it with the field. */
+  setReleaseMode(on: boolean): void
+  /** Turn a provider-neutral release phase into the farm's supernatural weather. */
+  setRelease(phase: ReleasePhase | undefined): void
   /** The screensaver camera tour: on, the camera drifts between shots whenever nobody is touching it. */
   setTour(on: boolean): void
   /** Put the camera exactly here, looking exactly there (for films and screenshots). */
@@ -148,6 +154,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   scene.add(hand.group)
   const ufo = buildUfo()
   scene.add(ufo.group)
+  const release = createReleaseRig(scene)
   let transfers = 0
   let ufoOdds = UFO_ODDS
   /** Every ufoOdds-th transfer, on a fixed per-session offset so a fresh page does not always open with a saucer. */
@@ -201,8 +208,9 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   let hovered: PickTarget | undefined
   let down: { x: number; y: number; at: number } | undefined
 
-  // Until someone drags or zooms, the camera backs up just enough that all five pens fit across the view.
+  // Until someone drags or zooms, the camera backs up just enough that every visible pen fits across the view.
   let touched = false
+  let fieldHalfWidth = 54
   const tour = createTour(camera, controls)
   controls.addEventListener("start", () => {
     touched = true
@@ -210,9 +218,8 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   })
   const frameField = () => {
     if (touched) return
-    const halfWidth = 54
     const halfFov = THREE.MathUtils.degToRad(camera.fov / 2)
-    const distance = Math.min(controls.maxDistance, Math.max(70, halfWidth / (Math.tan(halfFov) * camera.aspect)))
+    const distance = Math.min(controls.maxDistance, Math.max(70, fieldHalfWidth / (Math.tan(halfFov) * camera.aspect)))
     const direction = camera.position.clone().sub(controls.target).normalize()
     camera.position.copy(controls.target).addScaledVector(direction, distance)
     controls.update()
@@ -751,6 +758,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     const t = clock.elapsedTime
     frame++
     stepHand(dt, t)
+    release.tick(t, dt)
     for (const cow of cows.values()) stepCow(cow, dt, t)
     if (frame % 3 === 0 && cows.size > 1) separate()
     critters.tick(dt, t, camera)
@@ -897,6 +905,15 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     },
     setSky(state) {
       scenery.sky.set(state)
+    },
+    setReleaseMode(on) {
+      scenery.setPenVisible("recent", on)
+      fieldHalfWidth = on ? 69 : 54
+      frameField()
+    },
+    setRelease(phase) {
+      release.set(phase)
+      scenery.sky.setRelease(phase)
     },
     setTour(on) {
       tour.setEnabled(on)

@@ -1,14 +1,15 @@
 import type { PrState } from "@/lib/pr-state"
 
 /** Where a cow lives: one pen per stage of a pull request's life. */
-export type PenID = "draft" | "awaiting" | "changes" | "ready" | "merged"
+export type PenID = "draft" | "awaiting" | "changes" | "ready" | "merged" | "recent"
 
 export type Rect = { x0: number; x1: number; z0: number; z1: number }
 
 export type Pen = { id: PenID; name: string; rect: Rect }
 
 /**
- * Four small pens across the front of the field, one wide pen behind them.
+ * Four small pens across the front of the field, one wide pen behind them,
+ * and an optional release paddock just off the right fence line.
  * The camera looks in from the front (+z), so the lifecycle reads left to
  * right and then "up" into the merged herd.
  */
@@ -18,12 +19,13 @@ export const PENS: Pen[] = [
   { id: "changes", name: "Changes requested", rect: { x0: 0.8, x1: 22.8, z0: 6, z1: 28 } },
   { id: "ready", name: "Ready to merge", rect: { x0: 24.2, x1: 46.2, z0: 6, z1: 28 } },
   { id: "merged", name: "Merged", rect: { x0: -46, x1: 46.2, z0: -34, z1: 3 } },
+  { id: "recent", name: "Recently released", rect: { x0: 48.5, x1: 65.5, z0: -15, z1: 3 } },
 ]
 
-export const PEN_ORDER: PenID[] = ["draft", "awaiting", "changes", "ready", "merged"]
+export const PEN_ORDER: PenID[] = ["draft", "awaiting", "changes", "ready", "merged", "recent"]
 
 export function penFor(id: PenID): Pen {
-  return PENS.find((pen) => pen.id === id) ?? PENS[PENS.length - 1]
+  return PENS.find((pen) => pen.id === id) ?? PENS[0]
 }
 
 /** The pen an open pull request grazes in, from its single stage. */

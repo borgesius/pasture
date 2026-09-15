@@ -13,5 +13,12 @@ export default async function PasturePage() {
     const session = await auth()
     if (!session) redirect("/")
   }
-  return <Pasture defaultScope={process.env.PASTURE_DEFAULT_ORG || "me"} tokenMode={mode} signOut={mode ? undefined : signOutAction} />
+  return (
+    <Pasture
+      defaultScope={process.env.PASTURE_DEFAULT_ORG || "me"}
+      tokenMode={mode}
+      releaseEnabled={Boolean(process.env.PASTURE_RELEASE_FEED_URL)}
+      signOut={mode ? undefined : signOutAction}
+    />
+  )
 }

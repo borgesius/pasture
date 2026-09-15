@@ -19,6 +19,8 @@ export function inPond(x: number, z: number, margin = 1.5) {
 export type Scenery = {
   signs: Map<PenID, Sign>
   clouds: THREE.Group[]
+  /** The release paddock does not exist visually until an integration is active. */
+  setPenVisible(pen: PenID, visible: boolean): void
   /** World position of John Pork's head, for labels. */
   porkPosition(): THREE.Vector3
   /** The sky, driven by the real sun and weather. */
@@ -217,10 +219,11 @@ function buildRocks(scene: THREE.Scene) {
 function buildFences(scene: THREE.Scene) {
   const wood = new THREE.MeshStandardMaterial({ color: "#9c6f3a", roughness: 0.95 })
   const spacing = 3
-  const posts: THREE.Matrix4[] = []
-  const rails: THREE.Matrix4[] = []
+  const groups = new Map<PenID, THREE.Group>()
   const up = new THREE.Vector3(0, 1, 0)
   for (const pen of PENS) {
+    const posts: THREE.Matrix4[] = []
+    const rails: THREE.Matrix4[] = []
     const { x0, x1, z0, z1 } = pen.rect
     const sides: Array<{ from: [number, number]; to: [number, number] }> = [
       { from: [x0, z0], to: [x1, z0] },
@@ -247,18 +250,23 @@ function buildFences(scene: THREE.Scene) {
         }
       }
     }
+    const group = new THREE.Group()
+    const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.15, 0.2), wood, posts.length)
+    posts.forEach((m, i) => postMesh.setMatrixAt(i, m))
+    const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(spacing, 0.09, 0.07), wood, rails.length)
+    rails.forEach((m, i) => railMesh.setMatrixAt(i, m))
+    postMesh.castShadow = true
+    railMesh.castShadow = true
+    group.add(postMesh, railMesh)
+    scene.add(group)
+    groups.set(pen.id, group)
   }
-  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.15, 0.2), wood, posts.length)
-  posts.forEach((m, i) => postMesh.setMatrixAt(i, m))
-  const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(spacing, 0.09, 0.07), wood, rails.length)
-  rails.forEach((m, i) => railMesh.setMatrixAt(i, m))
-  postMesh.castShadow = true
-  railMesh.castShadow = true
-  scene.add(postMesh, railMesh)
+  return groups
 }
 
 function buildSigns(scene: THREE.Scene) {
   const signs = new Map<PenID, Sign>()
+  const groups = new Map<PenID, THREE.Group>()
   const wood = new THREE.MeshStandardMaterial({ color: "#8a6238", roughness: 1 })
   for (const pen of PENS) {
     const canvas = document.createElement("canvas")
@@ -281,8 +289,9 @@ function buildSigns(scene: THREE.Scene) {
     group.position.set(pen.rect.x0 + 3.9, 0, pen.rect.z1 + 1.35)
     scene.add(group)
     signs.set(pen.id, sign)
+    groups.set(pen.id, group)
   }
-  return signs
+  return { signs, groups }
 }
 
 function buildClouds(scene: THREE.Scene) {
@@ -453,10 +462,12 @@ export function buildScenery(scene: THREE.Scene): Scenery {
   buildPond(scene)
   buildTrees(scene)
   buildRocks(scene)
-  buildFences(scene)
+  const fences = buildFences(scene)
   const barn = buildBarn(scene)
   buildBackdrop(scene)
-  const signs = buildSigns(scene)
+  const { signs, groups: signGroups } = buildSigns(scene)
+  fences.get("recent")!.visible = false
+  signGroups.get("recent")!.visible = false
   // John Pork: every few minutes he rises into the loft window, looks around, and drops back.
   const porkRand = mulberry32(777)
   let porkNext = 90 + porkRand() * 120
@@ -486,6 +497,12 @@ export function buildScenery(scene: THREE.Scene): Scenery {
     signs,
     clouds,
     sky,
+    setPenVisible(pen, visible) {
+      const fence = fences.get(pen)
+      const sign = signGroups.get(pen)
+      if (fence) fence.visible = visible
+      if (sign) sign.visible = visible
+    },
     porkPosition() {
       return barn.pork.getWorldPosition(porkWorld).clone().add(new THREE.Vector3(0, 0.7, 0))
     },
