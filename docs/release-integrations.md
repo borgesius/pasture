@@ -1,7 +1,51 @@
 # Release integrations
 
-Pasture can optionally show release state without depending on a particular CI/CD product. A
-small adapter translates whatever your release system knows into one HTTP JSON feed:
+Pasture can optionally show release state without depending on a particular CI/CD product. The
+simplest source is GitHub's own deployment ledger; an HTTP JSON feed remains available when the
+authoritative state only exists in another provider.
+
+## GitHub Deployments — no adapter
+
+```dotenv
+PASTURE_RELEASE_GITHUB=1
+# Optional: only observe these repositories instead of auto-discovering the organization.
+# PASTURE_RELEASE_GITHUB_REPOS=acme/api,acme/web
+# Optional: override the case-insensitive production environment expression.
+# PASTURE_RELEASE_GITHUB_PRODUCTION_PATTERN=\bprod(?:uction)?\b
+PASTURE_RELEASE_SCOPES=acme
+```
+
+This uses the same GitHub credential as the rest of Pasture: `GITHUB_TOKEN`, `PASTURE_GH_CLI=1`,
+or the signed-in viewer's OAuth token. No deployment credential reaches the browser and no webhook,
+push process, or separately hosted adapter is required. The Mac TV installer persists these
+settings when they are supplied to `scripts/mini/install.sh`.
+
+For each allowed organization, Pasture discovers the most recently pushed repositories with
+GitHub environments whose names contain `prod` or `production`. Preview, staging, development,
+and test environments are excluded. It then reads:
+
+- default-branch commit history and merged pull requests;
+- production deployment SHAs and their latest GitHub Deployment status;
+- successive successful production deployments from the last 24 hours.
+
+A pull request is `waiting` while its merge commit is newer than an observed successful production
+SHA. In a monorepo with several production environments, it remains waiting until every observed
+environment whose SHA is behind has caught up; the environment names become its `targets`.
+Successive successful deployment SHAs determine the `recent` set. Pending and in-progress GitHub
+deployments drive queued/deploying weather; success and failure produce the short terminal effect.
+
+Discovery is intentionally bounded to 100 recently pushed organization repositories, 30 release
+repositories, 50 environments per repository, 60 production deployments, the newest 100 commits,
+and pull requests merged in the last 30 days. `PASTURE_RELEASE_GITHUB_REPOS` is recommended for a
+large or noisy organization. GitHub state is observational: if a deployment can change without
+updating GitHub Deployments, use the HTTP source below rather than treating this picture as
+provider-authoritative.
+
+When both sources are configured, the built-in GitHub source takes precedence.
+
+## HTTP feed
+
+A small adapter can instead translate whatever a release system knows into one JSON feed:
 
 - `waiting`: pull requests merged into the release branch but not present in the production
   marker. For a branch-based pipeline this is commonly the `production...main` diff.

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 import { fetchViewer } from "@/lib/github"
-import { fetchReleaseFeed, releaseFeedConfigured, releaseFeedScopes } from "@/lib/release-feed-server"
+import { fetchReleaseSource, releaseScopes, releaseSourceConfigured } from "@/lib/release-feed-server"
 import { resolveToken } from "@/lib/token"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
-export const maxDuration = 15
+export const maxDuration = 60
 
 const SCOPE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 const viewers = new Map<string, { orgs: string[]; at: number }>()
@@ -28,12 +28,12 @@ export async function GET(req: Request) {
   if (!token) return NextResponse.json({ error: "Not signed in" }, { status: 401 })
   const scope = (new URL(req.url).searchParams.get("scope") || "").toLowerCase()
   const quiet = { configured: false, scope, checkedAt: Date.now() }
-  if (!SCOPE.test(scope) || !releaseFeedConfigured() || !releaseFeedScopes().includes(scope)) {
+  if (!SCOPE.test(scope) || !releaseSourceConfigured() || !releaseScopes().includes(scope)) {
     return NextResponse.json(quiet, { headers: { "cache-control": "private, no-store" } })
   }
   try {
     if (!(await viewerOrgs(token)).includes(scope)) return NextResponse.json(quiet, { headers: { "cache-control": "private, no-store" } })
-    const feed = await fetchReleaseFeed(scope)
+    const feed = await fetchReleaseSource(token, scope)
     return NextResponse.json({ configured: true, scope, checkedAt: Date.now(), ...feed }, { headers: { "cache-control": "private, no-store" } })
   } catch {
     return NextResponse.json(

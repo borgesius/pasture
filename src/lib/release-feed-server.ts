@@ -1,4 +1,5 @@
 import "server-only"
+import { fetchGitHubReleaseFeed, githubReleaseConfigured } from "@/lib/github-release-server"
 import { parseReleaseFeed, type ReleaseFeed } from "@/lib/pasture/releases"
 
 const KEEP_MS = 5_000
@@ -8,7 +9,7 @@ type Cached = { at: number; feed: ReleaseFeed }
 const cache = new Map<string, Cached>()
 const inflight = new Map<string, Promise<ReleaseFeed>>()
 
-export function releaseFeedScopes(): string[] {
+export function releaseScopes(): string[] {
   const configured = process.env.PASTURE_RELEASE_SCOPES || process.env.PASTURE_DEFAULT_ORG || ""
   return configured
     .split(",")
@@ -16,8 +17,8 @@ export function releaseFeedScopes(): string[] {
     .filter(Boolean)
 }
 
-export function releaseFeedConfigured() {
-  return Boolean(process.env.PASTURE_RELEASE_FEED_URL && releaseFeedScopes().length)
+export function releaseSourceConfigured() {
+  return Boolean((githubReleaseConfigured() || process.env.PASTURE_RELEASE_FEED_URL) && releaseScopes().length)
 }
 
 async function read(scope: string): Promise<ReleaseFeed> {
@@ -50,4 +51,9 @@ export async function fetchReleaseFeed(scope: string): Promise<ReleaseFeed> {
     .finally(() => inflight.delete(scope))
   inflight.set(scope, promise)
   return promise
+}
+
+/** Prefer the built-in GitHub observer; the HTTP contract remains an escape hatch for other systems. */
+export function fetchReleaseSource(token: string, scope: string): Promise<ReleaseFeed> {
+  return githubReleaseConfigured() ? fetchGitHubReleaseFeed(token, scope) : fetchReleaseFeed(scope)
 }
