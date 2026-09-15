@@ -5,7 +5,7 @@ import type { Breed, HornStyle } from "../breeds"
 import type { PenID } from "../pens"
 import { COAT_V0, SWATCH, atlasFor, collarSwatch, swatchUV } from "./atlas"
 
-export type CowSpec = { id: string; breed: Breed; seed: number; pen: PenID; author: string; collar: number }
+export type CowSpec = { id: string; breed: Breed; seed: number; pen: PenID; author: string; collar: number; queued?: boolean }
 
 export type CowParts = {
   group: THREE.Group

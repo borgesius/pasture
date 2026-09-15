@@ -10,6 +10,7 @@ import { BURN_SECONDS, createFire, createScorch, disposeFire, stepFire, stepScor
 import { buildHand, curlHand } from "./hand"
 import { buildUfo, stepUfo, UFO_HOVER } from "./ufo"
 import { POND, buildScenery, inPond } from "./scenery"
+import { createTour } from "./tour"
 import type { SkyState } from "./weather"
 
 export type { CowSpec } from "./cow"
@@ -60,6 +61,10 @@ export type PastureScene = {
   setUfoOdds(odds: number): void
   /** The real sky: where the sun is and what the weather is doing. */
   setSky(state: SkyState): void
+  /** The screensaver camera tour: on, the camera drifts between shots whenever nobody is touching it. */
+  setTour(on: boolean): void
+  /** Put the camera exactly here, looking exactly there (for films and screenshots). */
+  setCamera(position: [number, number, number], target: [number, number, number]): void
   dispose(): void
 }
 
@@ -198,8 +203,10 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
 
   // Until someone drags or zooms, the camera backs up just enough that all five pens fit across the view.
   let touched = false
+  const tour = createTour(camera, controls)
   controls.addEventListener("start", () => {
     touched = true
+    tour.interrupt()
   })
   const frameField = () => {
     if (touched) return
@@ -409,6 +416,20 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     if (cow.carried) {
       // Position and height come from the hand; the cow just swings.
       dangle(cow, t, 1)
+      parts.group.position.set(cow.x, 0, cow.z)
+      parts.group.rotation.y = cow.heading
+      return
+    }
+    if (cow.spec.queued && !cow.selected) {
+      // In the merge queue: hovering, turning slowly, waiting for its turn.
+      cow.lift = Math.min(1, cow.lift + dt * 0.8)
+      const up = ease(cow.lift)
+      parts.rig.position.y = up * (1.4 + size * 0.3) + Math.sin(t * 1.4 + cow.phase) * 0.12 * up
+      parts.rig.rotation.x = -0.05 * up
+      cow.heading += dt * 0.9 * up
+      dangle(cow, t, up * 0.6)
+      cow.mode = "idle"
+      settleHead(cow, dt)
       parts.group.position.set(cow.x, 0, cow.z)
       parts.group.rotation.y = cow.heading
       return
@@ -746,7 +767,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       cloud.position.x += (cloud.userData.speed as number) * dt
       if (cloud.position.x > 120) cloud.position.x = -120
     }
-    controls.update()
+    if (!tour.tick(dt, t)) controls.update()
     if (pointerInside && frame % 2 === 0) {
       const target = pick()
       if (target?.id !== hovered?.id || target?.kind !== hovered?.kind) {
@@ -854,6 +875,8 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       if (cow) {
         if (cow.hidden) return undefined
         tmp.set(cow.x, cow.parts.rig.position.y + headHeight(cow.spec.breed.size), cow.z)
+      } else if (id === "john-pork") {
+        tmp.copy(scenery.porkPosition())
       } else {
         const spot = critters.position(id)
         if (!spot) return undefined
@@ -874,6 +897,15 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
     },
     setSky(state) {
       scenery.sky.set(state)
+    },
+    setTour(on) {
+      tour.setEnabled(on)
+    },
+    setCamera(position, target) {
+      touched = true
+      camera.position.set(...position)
+      controls.target.set(...target)
+      controls.update()
     },
     focus(id, distance = 14) {
       const cow = cows.get(id)

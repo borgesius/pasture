@@ -6,7 +6,7 @@ set -u
 PORT="${PASTURE_PORT:-3517}"
 DEBUG_PORT="${PASTURE_TV_DEBUG_PORT:-9333}"
 CHROME="${PASTURE_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
-URL="http://127.0.0.1:$PORT/pasture"
+URL="http://127.0.0.1:$PORT/pasture?tour=1"
 for i in $(seq 1 300); do
   if curl -fsS -o /dev/null "$URL" 2>/dev/null; then break; fi
   sleep 2

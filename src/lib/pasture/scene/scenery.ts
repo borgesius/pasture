@@ -3,6 +3,8 @@ import { mulberry32 } from "@/lib/rng"
 import { PENS, type PenID } from "../pens"
 import { groundTexture, paintSign, type Sign } from "./atlas"
 import { createSkyRig, type SkyRig } from "./weather"
+import { buildBackdrop } from "./backdrop"
+import { JOHN_PORK } from "../critters"
 
 const TAU = Math.PI * 2
 
@@ -17,6 +19,8 @@ export function inPond(x: number, z: number, margin = 1.5) {
 export type Scenery = {
   signs: Map<PenID, Sign>
   clouds: THREE.Group[]
+  /** World position of John Pork's head, for labels. */
+  porkPosition(): THREE.Vector3
   /** The sky, driven by the real sun and weather. */
   sky: SkyRig
   /** Advance the wind. */
@@ -383,6 +387,36 @@ function buildBarn(scene: THREE.Scene) {
   const loftPane = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.22), dark)
   loftPane.position.set(0, wall + 1.6, depth / 2 + 0.06)
   barn.add(loftPane)
+  // John Pork, waiting below the loft window. He rises into it now and again.
+  const pork = new THREE.Group()
+  const pink = new THREE.MeshStandardMaterial({ color: JOHN_PORK.body, roughness: 0.85 })
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), pink)
+  head.scale.set(1.15, 1, 0.95)
+  pork.add(head)
+  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 0.22, 12), new THREE.MeshStandardMaterial({ color: "#e69a94", roughness: 0.8 }))
+  snout.rotation.x = Math.PI / 2
+  snout.position.set(0, -0.08, 0.42)
+  pork.add(snout)
+  for (const side of [-1, 1]) {
+    const nostril = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 5), new THREE.MeshStandardMaterial({ color: "#7a3a3a" }))
+    nostril.position.set(side * 0.07, -0.08, 0.53)
+    pork.add(nostril)
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshStandardMaterial({ color: JOHN_PORK.eyes, roughness: 0.4 }))
+    eye.position.set(side * 0.17, 0.08, 0.36)
+    pork.add(eye)
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.3, 4), pink)
+    ear.position.set(side * 0.3, 0.42, 0)
+    ear.rotation.z = side * -0.5
+    pork.add(ear)
+  }
+  const hoodie = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.5, 12), new THREE.MeshStandardMaterial({ color: "#2b2b2b", roughness: 0.9 }))
+  hoodie.position.y = -0.6
+  pork.add(hoodie)
+  pork.traverse((object) => {
+    object.userData.critterID = JOHN_PORK.id
+  })
+  pork.position.set(0, wall + 1.6 - 1.7, depth / 2 - 0.4)
+  barn.add(pork)
   for (const corner of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, wall, 0.35), trim)
     post.position.set((corner * width) / 2, wall / 2, depth / 2)
@@ -391,6 +425,7 @@ function buildBarn(scene: THREE.Scene) {
   barn.position.set(20, 0, -48)
   barn.rotation.y = -0.12
   scene.add(barn)
+  return { pork, windowY: wall + 1.6, hiddenY: wall + 1.6 - 1.7 }
 
   const straw = new THREE.MeshStandardMaterial({ color: "#d9b45e", roughness: 1 })
   const bale = new THREE.CylinderGeometry(1, 1, 1.7, 18)
@@ -419,8 +454,31 @@ export function buildScenery(scene: THREE.Scene): Scenery {
   buildTrees(scene)
   buildRocks(scene)
   buildFences(scene)
-  buildBarn(scene)
+  const barn = buildBarn(scene)
+  buildBackdrop(scene)
   const signs = buildSigns(scene)
+  // John Pork: every few minutes he rises into the loft window, looks around, and drops back.
+  const porkRand = mulberry32(777)
+  let porkNext = 90 + porkRand() * 120
+  let porkShown = -1
+  const porkTick = (t: number) => {
+    if (porkShown < 0) {
+      if (t < porkNext) return
+      porkShown = t
+    }
+    const age = t - porkShown
+    const up = age < 1 ? age : age < 6 ? 1 : age < 7 ? 7 - age : -1
+    if (up < 0) {
+      porkShown = -1
+      porkNext = t + 240 + porkRand() * 360
+      barn.pork.position.y = barn.hiddenY
+      return
+    }
+    const e = up * up * (3 - 2 * up)
+    barn.pork.position.y = barn.hiddenY + (barn.windowY - barn.hiddenY) * e
+    barn.pork.rotation.y = age > 1 && age < 6 ? Math.sin((age - 1) * 1.6) * 0.45 : 0
+  }
+  const porkWorld = new THREE.Vector3()
   const { clouds, material: cloudMaterial } = buildClouds(scene)
   const stars = buildStarsAt(scene)
   const sky = createSkyRig({ scene, ...skyParts, stars, clouds, cloudMaterial })
@@ -428,9 +486,13 @@ export function buildScenery(scene: THREE.Scene): Scenery {
     signs,
     clouds,
     sky,
+    porkPosition() {
+      return barn.pork.getWorldPosition(porkWorld).clone().add(new THREE.Vector3(0, 0.7, 0))
+    },
     tick(t, dt) {
       uniforms.uTime.value = t
       sky.tick(t, dt)
+      porkTick(t)
     },
   }
 }

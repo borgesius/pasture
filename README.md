@@ -31,9 +31,17 @@ shadows follow it), the colours run night to golden hour to day, stars and a moo
 thicken with the cloud cover, and it rains on the field when it rains in the city. `?sky=off`
 freezes a nice afternoon for screenshots.
 
+Leave it on a TV with the **Tour** button on (or `?tour=1`) and the camera drifts around the farm
+on its own: a slow push in on each pen, a low pass along the fences, a look at the barn, back out
+wide. Touch it and it holds still for a minute. Off past the barn is the bay, the city, and the
+Golden Gate Bridge; this is a farm, after all, so they are a long way off.
+
+A cow in the merge queue hovers and turns slowly until its turn comes. John Pork lives in the
+barn loft and shows his face at the window now and again.
+
 When a Datadog monitor goes into alert, a wolf comes out of the trees and prowls the fence line
 until it clears. One wolf per firing alert (up to eight); hover one for the monitor's name, click
-it to open the monitor. Wolves only show on the home organization's field, to its members.
+it to open the monitor. When an alert clears, Moon or Bean chases the wolf off. Wolves only show on the home organization's field, to its members.
 
 <img src="docs/media/pasture.jpg" alt="the field: 125 merged cows out back, 55 open ones in the front pens" width="840" />
 

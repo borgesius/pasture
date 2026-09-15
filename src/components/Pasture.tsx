@@ -21,7 +21,7 @@ const HERD_CAP = 300
 const REFRESH_MS = 60_000
 const STORAGE_KEY = "pasture.settings"
 
-type Settings = { scope: string; days: number; openMode: OpenMode; mooOnMove: boolean }
+type Settings = { scope: string; days: number; openMode: OpenMode; mooOnMove: boolean; tour: boolean }
 type Loaded = { key: string; data: Herd }
 
 const settingsKey = (s: Settings) => `${s.scope}|${s.days}|${s.openMode}`
@@ -34,6 +34,7 @@ function readStoredSettings(fallback: Settings): Settings {
     if (stored?.days && Number.isFinite(stored.days)) next.days = stored.days
     if (stored?.openMode === "all" || stored?.openMode === "active") next.openMode = stored.openMode
     if (typeof stored?.mooOnMove === "boolean") next.mooOnMove = stored.mooOnMove
+    if (typeof stored?.tour === "boolean") next.tour = stored.tour
   } catch {
     // Storage can be missing or locked down; the defaults are fine.
   }
@@ -43,6 +44,9 @@ function readStoredSettings(fallback: Settings): Settings {
   // `?moo=1` (or 0) is for a TV, which has nobody to click the bell.
   const mooParam = params.get("moo")
   if (mooParam === "1" || mooParam === "0") next.mooOnMove = mooParam === "1"
+  // `?tour=1` turns the screensaver camera on; a TV wants that.
+  const tourParam = params.get("tour")
+  if (tourParam === "1" || tourParam === "0") next.tour = tourParam === "1"
   return next
 }
 
@@ -54,7 +58,7 @@ function readStoredSettings(fallback: Settings): Settings {
  * to the right pen.
  */
 export default function Pasture(props: { defaultScope: string; tokenMode: boolean; signOut?: () => Promise<void> }) {
-  const [settings, setSettings] = useState<Settings>({ scope: props.defaultScope, days: 1, openMode: "active", mooOnMove: false })
+  const [settings, setSettings] = useState<Settings>({ scope: props.defaultScope, days: 1, openMode: "active", mooOnMove: false, tour: false })
   const [ready, setReady] = useState(false)
   const [viewer, setViewer] = useState<Viewer>()
   const [herd, setHerd] = useState<Loaded>()
@@ -66,8 +70,11 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
   const [bubble, setBubble] = useState<{ id: string; text: string; x: number; y: number }>()
   const [alerts, setAlerts] = useState<{ home: string | null; count: number; alerts: AlertSummary[] }>({ home: null, count: 0, alerts: [] })
   const [weather, setWeather] = useState<Weather | null>(null)
-  // `?sky=off` freezes the field at a nice afternoon, for screenshots and films.
-  const [liveSky] = useState(() => (typeof window === "undefined" ? true : new URLSearchParams(window.location.search).get("sky") !== "off"))
+  // `?sky=off` freezes the field at a nice afternoon, for screenshots and films. Read after mount so the server and client agree.
+  const [liveSky, setLiveSky] = useState(true)
+  useEffect(() => {
+    setLiveSky(new URLSearchParams(window.location.search).get("sky") !== "off")
+  }, [])
   const [focus, setFocus] = useState<string>()
   const [mooing, setMooing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -260,6 +267,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
         pen: member.pen,
         author: member.author,
         collar: collarIndex(collars.get(member.author) ?? ""),
+        queued: member.kind === "open" && member.pr.state === "merge-queue",
       })),
     [members, collars],
   )
@@ -338,6 +346,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     }
   }, [specs, data, key, byId, selected, closedIds])
   useEffect(() => sceneRef.current?.select(selected), [selected])
+  useEffect(() => sceneRef.current?.setTour(settings.tour), [settings.tour])
   useEffect(() => {
     if (!bubble) return
     let raf = 0
@@ -437,6 +446,15 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
         >
           {settings.mooOnMove ? "🔔 Moo on move" : "🔕 Moo on move"}
         </button>
+        <button
+          type="button"
+          className="textbtn"
+          aria-pressed={settings.tour}
+          title={settings.tour ? "The camera drifts around the farm on its own. Click to hold still." : "Click and the camera tours the farm like a screensaver."}
+          onClick={() => update({ tour: !settings.tour })}
+        >
+          🎥 Tour
+        </button>
         <button type="button" className={`iconbtn${loading ? " spinning" : ""}`} aria-label="Refresh" title="Refresh" disabled={loading} onClick={() => void load(undefined, true)}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
@@ -480,7 +498,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
           <div className="hovercard" style={{ left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }}>
             <div className="title">
               {hoveredCritter.name}
-              {hoveredCritter.id === FARMER_ID ? " · the farmer" : hoveredCritter.kind === "dog" ? " · dog" : " · cat"}
+              {hoveredCritter.id === FARMER_ID ? " · the farmer" : hoveredCritter.kind === "dog" ? " · dog" : hoveredCritter.kind === "pig" ? " · in the loft" : " · cat"}
             </div>
             <div className="meta">{hoveredCritter.blurb}</div>
           </div>
@@ -524,7 +542,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
         ) : null}
 
         <div className="hint pill">hover a cow for its PR · click to lift · double-click to open · drag to look around · cows change pens as PRs advance</div>
-        {liveSky ? (
+        {liveSky && ready ? (
           <div className="pill sky" title="The sky over the field is San Francisco's, sun and weather included">
             {SAN_FRANCISCO.name} · {localClock(new Date(now))}
             {weather ? ` · ${describeWeather(weather.code)}${weather.temperatureF !== null ? ` ${Math.round(weather.temperatureF)}°F` : ""}` : ""}

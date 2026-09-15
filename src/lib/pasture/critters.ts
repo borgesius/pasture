@@ -2,7 +2,7 @@
  * Everyone on the field who is not a cow: the farmer, and the office pets
  * from #moon-bean-appreciation, who run laps around the pens having a nice time.
  */
-export type CritterKind = "dog" | "cat" | "farmer" | "wolf"
+export type CritterKind = "dog" | "cat" | "farmer" | "wolf" | "pig"
 
 export type Critter = {
   id: string
@@ -110,7 +110,21 @@ export const CRITTERS: Critter[] = [
   },
 ]
 
-export const critterByID = (id: string) => CRITTERS.find((critter) => critter.id === id)
+/** He lives in the barn loft and only shows his face now and again. */
+export const JOHN_PORK: Critter = {
+  id: "john-pork",
+  name: "John Pork",
+  kind: "pig",
+  blurb: "John Pork is calling. Do not answer.",
+  body: "#f2b7b0",
+  eyes: "#1d1917",
+  size: 1,
+  ears: "up",
+  legs: "regular",
+  speed: 0,
+}
+
+export const critterByID = (id: string) => (id === JOHN_PORK.id ? JOHN_PORK : CRITTERS.find((critter) => critter.id === id))
 
 /** What the farmer says when you click him. He is busy. */
 export const FARMER_LINES = [

@@ -412,7 +412,7 @@ function buildFarmer(spec: Critter): Parts {
 
 // ---------------------------------------------------------------- the runners
 
-type Mode = "go" | "rest" | "inspect" | "grumpy"
+type Mode = "go" | "rest" | "inspect" | "grumpy" | "flee" | "chase"
 
 type Runner = {
   spec: Critter
@@ -433,6 +433,9 @@ type Runner = {
   /** For followers: how far behind the leader they like to be, and a slowly changing whim on top. */
   gap: number
   whim: number
+  /** For chasers: which wolf, and until when. */
+  chasing?: string
+  chaseUntil: number
   x: number
   z: number
   rand: () => number
@@ -482,6 +485,7 @@ export function createCritters(scene: THREE.Scene): CritterField {
       grump: 0,
       gap: 0,
       whim: 0,
+      chaseUntil: 0,
       x: 0,
       z: 0,
       rand,
@@ -541,6 +545,57 @@ export function createCritters(scene: THREE.Scene): CritterField {
     if (runner.rand() < dt * 0.3) runner.offsetTarget = spec.kind === "wolf" ? 1.6 + runner.rand() * 2 : 0.5 + runner.rand() * (spec.kind === "farmer" ? 1 : 2.2)
     runner.offset += (runner.offsetTarget - runner.offset) * Math.min(1, dt * 0.8)
 
+    if (runner.mode === "flee") {
+      // A chased-off wolf: flat out along the lane, tail down, until it is gone.
+      runner.speed = spec.speed * 2.6
+      runner.s = wrapLane(runner.s + runner.dir * runner.speed * dt)
+      runner.offsetTarget = 3.5
+      const forward = place(runner, dt)
+      runner.heading = lerpAngle(runner.heading, forward, dt * 6)
+      runner.gait += dt * 16
+      const swing = Math.sin(runner.gait) * 0.8
+      parts.legs[0].rotation.x = swing
+      parts.legs[3].rotation.x = swing
+      parts.legs[1].rotation.x = -swing
+      parts.legs[2].rotation.x = -swing
+      parts.rig.position.y = Math.abs(Math.sin(runner.gait)) * 0.14
+      if (parts.tail) parts.tail.rotation.x = 0.9
+      const fade = Math.max(0, Math.min(1, runner.timer / 1.2))
+      parts.rig.scale.setScalar(spec.size * (0.4 + 0.6 * fade))
+      parts.group.position.set(runner.x, 0, runner.z)
+      parts.group.rotation.y = runner.heading
+      if (runner.timer <= 0) removeRunner(spec.id)
+      return
+    }
+    const quarry = runner.chasing ? runners.get(runner.chasing) : undefined
+    if (runner.chasing && (!quarry || t > runner.chaseUntil)) {
+      runner.chasing = undefined
+      runner.mode = "go"
+      runner.timer = 1
+    }
+    if (quarry && runner.chasing) {
+      // On the wolf's heels, barking, until it is out of sight.
+      runner.mode = "chase"
+      const delta = laneDelta(runner.s, quarry.s)
+      runner.speed = spec.speed * 2.6
+      runner.dir = delta >= 0 ? 1 : -1
+      runner.s = wrapLane(runner.s + runner.dir * Math.min(Math.abs(delta) - 1.5 > 0 ? runner.speed * dt : 0, Math.abs(delta)))
+      runner.offset += (quarry.offset - runner.offset) * Math.min(1, dt * 2)
+      const forward = place(runner, dt)
+      runner.heading = lerpAngle(runner.heading, forward, dt * 6)
+      runner.gait += dt * 14
+      const swing = Math.sin(runner.gait) * 0.75
+      parts.legs[0].rotation.x = swing
+      parts.legs[3].rotation.x = swing
+      parts.legs[1].rotation.x = -swing
+      parts.legs[2].rotation.x = -swing
+      parts.rig.position.y = Math.abs(Math.sin(runner.gait)) * 0.12
+      parts.head.rotation.x = Math.sin(t * 12) * 0.12
+      if (parts.tail) parts.tail.rotation.y = Math.sin(t * 22) * 0.5
+      parts.group.position.set(runner.x, 0, runner.z)
+      parts.group.rotation.y = runner.heading
+      return
+    }
     const leader = spec.follows ? runners.get(spec.follows) : undefined
     if (leader && runner.mode !== "grumpy") {
       // Stay on the leader's heels: a spot `gap` behind him, with a whim that
@@ -698,7 +753,19 @@ export function createCritters(scene: THREE.Scene): CritterField {
     },
     setWolves(specs) {
       const wanted = new Map(specs.map((spec) => [spec.id, spec]))
-      for (const [id, runner] of runners) if (runner.spec.kind === "wolf" && !wanted.has(id)) removeRunner(id)
+      const chasers = ["bean", "moon"].map((id) => runners.get(id)).filter((r): r is Runner => !!r && !r.chasing)
+      for (const [id, runner] of runners) {
+        if (runner.spec.kind !== "wolf" || wanted.has(id) || runner.mode === "flee") continue
+        // The alert cleared: a dog sees the wolf off instead of it just vanishing.
+        runner.mode = "flee"
+        runner.timer = 5
+        const dog = chasers.shift()
+        if (dog) {
+          dog.chasing = id
+          dog.chaseUntil = Number.POSITIVE_INFINITY
+          dog.hop = 1
+        }
+      }
       let index = 0
       for (const spec of specs) {
         if (!runners.has(spec.id)) addRunner(spec, index)
