@@ -40,12 +40,11 @@ A cow in the merge queue hovers and turns slowly until its turn comes. John Pork
 barn loft and shows his face at the window now and again.
 
 An optional [release integration](docs/release-integrations.md) can replace the merged-history
-herd with what is actually waiting to be released. The large back pasture becomes **waiting for
-release**, a small paddock appears off to the side for **recently released** work, and an active
-release changes the weather while a mothership gathers over the field. Pasture consumes a small,
-provider-neutral JSON feed; it does not need to know the CI system, branch layout or deployment
-vendor behind it. With no feed configured, the original merged-within-the-timeframe field is
-unchanged.
+herd with what is actually waiting to be released. The large back pasture divides evenly into
+**waiting for release** and **recently released**, and an active release changes the weather while
+a service-labelled mothership gathers over the field. Pasture consumes a small, provider-neutral
+JSON feed; it does not need to know the CI system, branch layout or deployment vendor behind it.
+With no feed configured, the original merged-within-the-timeframe field is unchanged.
 
 When a Datadog monitor goes into alert, a wolf comes out of the trees and prowls the fence line
 until it clears. One wolf per firing alert (up to eight); hover one for the monitor's name, click

@@ -80,7 +80,7 @@ describe("pasture members", () => {
     expect(members.filter((m) => m.kind === "merged").map((m) => m.pr.number)).toEqual([100, 101, 102])
   })
 
-  test("a release feed keeps waiting work central and released work in the side paddock", () => {
+  test("a release feed keeps waiting and recently released work in separate paddocks", () => {
     const members = buildMembers([open(1)], [merged(9)], new Map(), 150, [merged(10)], true)
     expect(members.map((member) => [member.id, member.pen, member.kind === "merged" ? member.release : undefined])).toEqual([
       ["coval-ai/backend#9", "merged", "waiting"],

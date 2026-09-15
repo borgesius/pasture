@@ -30,6 +30,30 @@ describe("release feeds", () => {
     expect(primaryReleaseEvent(feed)).toMatchObject({ id: "release-window", phase: "scheduled", environment: "production" })
   })
 
+  test("prefers the most active service and lets terminal weather expire", () => {
+    const feed = parseReleaseFeed({
+      schemaVersion: 1,
+      generatedAt: "2026-09-15T18:00:00Z",
+      waiting: [],
+      recent: [],
+      events: [
+        { id: "queued-api", label: "API", environment: "production", phase: "queued" },
+        { id: "deploy-web", label: "Web", environment: "production", phase: "deploying" },
+      ],
+    })
+    expect(primaryReleaseEvent(feed)).toMatchObject({ id: "deploy-web", label: "Web" })
+
+    const succeeded = parseReleaseFeed({
+      schemaVersion: 1,
+      generatedAt: "2026-09-15T18:00:00Z",
+      waiting: [],
+      recent: [],
+      events: [{ id: "done", label: "Web", environment: "production", phase: "succeeded", updatedAt: "2026-09-15T18:00:00Z" }],
+    })
+    expect(primaryReleaseEvent(succeeded, Date.parse("2026-09-15T18:04:59Z"))?.id).toBe("done")
+    expect(primaryReleaseEvent(succeeded, Date.parse("2026-09-15T18:05:00Z"))).toBeUndefined()
+  })
+
   test("rejects provider phases Pasture cannot render", () => {
     expect(() =>
       parseReleaseFeed({

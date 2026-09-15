@@ -360,7 +360,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     })
     sceneRef.current = scene
     scene.setReleaseMode(releaseModeRef.current)
-    scene.setRelease(releaseEventRef.current?.phase)
+    scene.setRelease(releaseEventRef.current)
     if (liveSky) {
       const sun = sunPosition(new Date())
       scene.setSky({ altitude: sun.altitude, azimuth: sun.azimuth, weather: null })
@@ -382,13 +382,14 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     shownKeyRef.current = key
     // Closed pull requests burn where they stand; the hand of god is not called.
     if (animate) for (const id of closedIds) scene.burn(id)
+    scene.setReleaseMode(releaseMode)
     scene.setCows(specs, animate)
     if (selected && !byId.has(selected)) setSelected(undefined)
     if (process.env.NODE_ENV !== "production") {
       // Dev harness: `__pasture.scene.setCows(specs, true)` from the console plays the hand of god.
       ;(window as unknown as { __pasture?: unknown }).__pasture = { scene, specs }
     }
-  }, [specs, data, key, byId, selected, closedIds])
+  }, [specs, data, key, byId, selected, closedIds, releaseMode])
   useEffect(() => sceneRef.current?.select(selected), [selected])
   useEffect(() => sceneRef.current?.setTour(settings.tour), [settings.tour])
   useEffect(() => {
@@ -414,7 +415,7 @@ export default function Pasture(props: { defaultScope: string; tokenMode: boolea
     scene.setSign("merged", releaseMode ? "Waiting for release" : `Merged, ${timeframeLabel(settings.days)}`)
     scene.setSign("recent", "Recently released")
   }, [releaseMode, settings.days])
-  useEffect(() => sceneRef.current?.setRelease(releaseEvent?.phase), [releaseEvent?.phase])
+  useEffect(() => sceneRef.current?.setRelease(releaseEvent), [releaseEvent])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

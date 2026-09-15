@@ -1,6 +1,6 @@
 import * as THREE from "three"
 import { mulberry32 } from "@/lib/rng"
-import { PENS, type PenID } from "../pens"
+import { PENS, RELEASE_PENS, type PenID } from "../pens"
 import { groundTexture, paintSign, type Sign } from "./atlas"
 import { createSkyRig, type SkyRig } from "./weather"
 import { buildBackdrop } from "./backdrop"
@@ -268,7 +268,8 @@ function buildSigns(scene: THREE.Scene) {
   const signs = new Map<PenID, Sign>()
   const groups = new Map<PenID, THREE.Group>()
   const wood = new THREE.MeshStandardMaterial({ color: "#8a6238", roughness: 1 })
-  for (const pen of PENS) {
+  const recent = RELEASE_PENS.find((pen) => pen.id === "recent")!
+  for (const pen of [...PENS, recent]) {
     const canvas = document.createElement("canvas")
     canvas.width = 512
     canvas.height = 176
@@ -292,6 +293,36 @@ function buildSigns(scene: THREE.Scene) {
     groups.set(pen.id, group)
   }
   return { signs, groups }
+}
+
+/** The optional centre fence that turns the rear field into two equal release paddocks. */
+function buildReleaseDivider(scene: THREE.Scene) {
+  const group = new THREE.Group()
+  const wood = new THREE.MeshStandardMaterial({ color: "#9c6f3a", roughness: 0.95 })
+  const rear = PENS.find((pen) => pen.id === "merged")!.rect
+  const x = (rear.x0 + rear.x1) / 2
+  const spacing = 3
+  const length = rear.z1 - rear.z0
+  const segments = Math.max(1, Math.round(length / spacing))
+  const step = length / segments
+  for (let i = 0; i <= segments; i++) {
+    const z = rear.z0 + step * i
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.15, 0.2), wood)
+    post.position.set(x, 0.57, z)
+    post.castShadow = true
+    group.add(post)
+    if (i === segments) continue
+    for (const y of [0.45, 0.85]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(step, 0.09, 0.07), wood)
+      rail.position.set(x, y, z + step / 2)
+      rail.rotation.y = Math.PI / 2
+      rail.castShadow = true
+      group.add(rail)
+    }
+  }
+  group.visible = false
+  scene.add(group)
+  return group
 }
 
 function buildClouds(scene: THREE.Scene) {
@@ -462,11 +493,11 @@ export function buildScenery(scene: THREE.Scene): Scenery {
   buildPond(scene)
   buildTrees(scene)
   buildRocks(scene)
-  const fences = buildFences(scene)
+  buildFences(scene)
   const barn = buildBarn(scene)
   buildBackdrop(scene)
   const { signs, groups: signGroups } = buildSigns(scene)
-  fences.get("recent")!.visible = false
+  const releaseDivider = buildReleaseDivider(scene)
   signGroups.get("recent")!.visible = false
   // John Pork: every few minutes he rises into the loft window, looks around, and drops back.
   const porkRand = mulberry32(777)
@@ -498,9 +529,8 @@ export function buildScenery(scene: THREE.Scene): Scenery {
     clouds,
     sky,
     setPenVisible(pen, visible) {
-      const fence = fences.get(pen)
       const sign = signGroups.get(pen)
-      if (fence) fence.visible = visible
+      if (pen === "recent") releaseDivider.visible = visible
       if (sign) sign.visible = visible
     },
     porkPosition() {

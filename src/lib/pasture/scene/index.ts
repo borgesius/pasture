@@ -5,14 +5,13 @@ import { penFor, type PenID } from "../pens"
 import { paintSign } from "./atlas"
 import { buildCow, disposeCow, gripHeight, headHeight, type CowParts, type CowSpec } from "./cow"
 import { wolfFor, type AlertSummary } from "../wolves"
-import type { ReleasePhase } from "../releases"
 import { createCritters } from "./critters"
 import { BURN_SECONDS, createFire, createScorch, disposeFire, stepFire, stepScorch, type Fire, type Scorch } from "./fire"
 import { buildHand, curlHand } from "./hand"
 import { buildUfo, stepUfo, UFO_HOVER } from "./ufo"
 import { POND, buildScenery, inPond } from "./scenery"
 import { createTour } from "./tour"
-import { createReleaseRig } from "./release"
+import { createReleaseRig, type ReleaseSceneEvent } from "./release"
 import type { SkyState } from "./weather"
 
 export type { CowSpec } from "./cow"
@@ -63,10 +62,10 @@ export type PastureScene = {
   setUfoOdds(odds: number): void
   /** The real sky: where the sun is and what the weather is doing. */
   setSky(state: SkyState): void
-  /** Reveal the optional recently-released paddock and frame it with the field. */
+  /** Divide the rear pasture into equal waiting and recently-released paddocks. */
   setReleaseMode(on: boolean): void
   /** Turn a provider-neutral release phase into the farm's supernatural weather. */
-  setRelease(phase: ReleasePhase | undefined): void
+  setRelease(event: ReleaseSceneEvent | undefined): void
   /** The screensaver camera tour: on, the camera drifts between shots whenever nobody is touching it. */
   setTour(on: boolean): void
   /** Put the camera exactly here, looking exactly there (for films and screenshots). */
@@ -90,8 +89,8 @@ function lerpAngle(from: number, to: number, amount: number) {
   return from + delta * Math.min(1, amount)
 }
 
-function randomPointIn(pen: PenID, rand: () => number, inset = 1.8) {
-  const { rect } = penFor(pen)
+function randomPointIn(pen: PenID, rand: () => number, inset = 1.8, releaseMode = false) {
+  const { rect } = penFor(pen, releaseMode)
   for (let attempt = 0; attempt < 20; attempt++) {
     const x = rect.x0 + inset + rand() * (rect.x1 - rect.x0 - inset * 2)
     const z = rect.z0 + inset + rand() * (rect.z1 - rect.z0 - inset * 2)
@@ -180,6 +179,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   let selectedID: string | undefined
   let filter: Set<string> | undefined
   let seeded = false
+  let releaseMode = false
   const queue: Transfer[] = []
   let active: Active | undefined
 
@@ -210,7 +210,6 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
 
   // Until someone drags or zooms, the camera backs up just enough that every visible pen fits across the view.
   let touched = false
-  let fieldHalfWidth = 54
   const tour = createTour(camera, controls)
   controls.addEventListener("start", () => {
     touched = true
@@ -219,7 +218,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   const frameField = () => {
     if (touched) return
     const halfFov = THREE.MathUtils.degToRad(camera.fov / 2)
-    const distance = Math.min(controls.maxDistance, Math.max(70, fieldHalfWidth / (Math.tan(halfFov) * camera.aspect)))
+    const distance = Math.min(controls.maxDistance, Math.max(70, 54 / (Math.tan(halfFov) * camera.aspect)))
     const direction = camera.position.clone().sub(controls.target).normalize()
     camera.position.copy(controls.target).addScaledVector(direction, distance)
     controls.update()
@@ -292,7 +291,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   }
 
   function pickTarget(cow: Cow) {
-    const { rect } = penFor(cow.pen)
+    const { rect } = penFor(cow.pen, releaseMode)
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = cow.rand() * TAU
       const distance = 3 + cow.rand() * 8
@@ -300,7 +299,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       const z = Math.max(rect.z0 + 1.8, Math.min(rect.z1 - 1.8, cow.z + Math.cos(angle) * distance))
       if (!inPond(x, z)) return { x, z }
     }
-    return randomPointIn(cow.pen, cow.rand)
+    return randomPointIn(cow.pen, cow.rand, 1.8, releaseMode)
   }
 
   function applyDim(cow: Cow) {
@@ -313,7 +312,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
   function makeCow(spec: CowSpec, hidden: boolean): Cow {
     const rand = mulberry32(spec.seed ^ 0x9e3779b9)
     const parts = buildCow(spec)
-    const { x, z } = randomPointIn(spec.pen, rand)
+    const { x, z } = randomPointIn(spec.pen, rand, 1.8, releaseMode)
     const cow: Cow = {
       spec,
       parts,
@@ -513,7 +512,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
 
   /** Jostling can shove a cow through a fence or into the pond; put it back. */
   function keepInBounds(cow: Cow) {
-    const { rect } = penFor(cow.pen)
+    const { rect } = penFor(cow.pen, releaseMode)
     cow.x = Math.max(rect.x0 + 1.2, Math.min(rect.x1 - 1.2, cow.x))
     cow.z = Math.max(rect.z0 + 1.2, Math.min(rect.z1 - 1.2, cow.z))
     if (!inPond(cow.x, cow.z, 1.2)) return
@@ -623,7 +622,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       if (!cow) continue
       if (transfer.kind === "move") {
         if (cow.pendingPen !== transfer.to) continue
-        const to = randomPointIn(transfer.to, cow.rand)
+        const to = randomPointIn(transfer.to, cow.rand, 1.8, releaseMode)
         active = { transfer, phase: "descend", vehicle: nextVehicle(), t: 0, from: { x: cow.x, z: cow.z }, to, cow }
         placeHand(cow.x, SKY_Y, cow.z)
         curlHand(hand, 0)
@@ -836,7 +835,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
           } else {
             cow.pen = change.to
             cow.pendingPen = undefined
-            const spot = randomPointIn(change.to, cow.rand)
+            const spot = randomPointIn(change.to, cow.rand, 1.8, releaseMode)
             cow.x = spot.x
             cow.z = spot.z
             cow.target = spot
@@ -907,13 +906,25 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       scenery.sky.set(state)
     },
     setReleaseMode(on) {
+      const changed = releaseMode !== on
+      releaseMode = on
       scenery.setPenVisible("recent", on)
-      fieldHalfWidth = on ? 69 : 54
+      if (changed) {
+        for (const cow of cows.values()) {
+          if (cow.carried || cow.burning || (cow.pen !== "merged" && cow.pen !== "recent")) continue
+          const { rect } = penFor(cow.pen, releaseMode)
+          if (cow.x >= rect.x0 + 1.2 && cow.x <= rect.x1 - 1.2 && cow.z >= rect.z0 + 1.2 && cow.z <= rect.z1 - 1.2) continue
+          const spot = randomPointIn(cow.pen, cow.rand, 1.8, releaseMode)
+          cow.x = spot.x
+          cow.z = spot.z
+          cow.target = spot
+        }
+      }
       frameField()
     },
-    setRelease(phase) {
-      release.set(phase)
-      scenery.sky.setRelease(phase)
+    setRelease(event) {
+      release.set(event)
+      scenery.sky.setRelease(event?.phase)
     },
     setTour(on) {
       tour.setEnabled(on)
@@ -945,6 +956,7 @@ export function createPastureScene(canvas: HTMLCanvasElement, events: PastureEve
       canvas.removeEventListener("dblclick", onDoubleClick)
       controls.dispose()
       critters.dispose()
+      release.dispose()
       scenery.sky.dispose()
       for (const scorch of scorches) {
         scorch.mesh.geometry.dispose()

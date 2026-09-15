@@ -404,6 +404,14 @@ img {
   }
 }
 
+@media (max-width: 600px) {
+  .release-status {
+    top: 56px;
+    left: 14px;
+    right: 14px;
+  }
+}
+
 .pill.sky {
   position: absolute;
   right: 14px;
